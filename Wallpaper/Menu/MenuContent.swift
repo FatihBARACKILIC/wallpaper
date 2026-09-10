@@ -39,32 +39,56 @@ struct MenuContent: View {
 
     @ViewBuilder
     private var currentPhoto: some View {
-        if let photo = manager.currentPhotos.first {
-            VStack(alignment: .leading, spacing: 2) {
-                // "Photo by <name> on Unsplash", both links carrying UTM
-                // parameters — the attribution the API guidelines require.
-                HStack(spacing: 0) {
-                    Text("Photo by ")
-                    if let photographerURL = photo.photographerURL {
-                        Link(photo.user.name, destination: photographerURL)
-                    } else {
-                        Text(photo.user.name)
-                    }
-                    Text(" on ")
-                    Link("Unsplash", destination: UnsplashAttribution.homeURL)
-                }
-                .font(.callout)
-
-                if let webURL = photo.webURL {
-                    Link("View this photo", destination: webURL)
-                        .font(.caption)
-                }
-            }
-        } else {
+        if manager.currentPhotos.isEmpty {
             Text("No wallpaper set yet.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
+        } else {
+            // Every photo in use has to be credited, not just the first — in
+            // per-screen mode each display carries a different photographer.
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(Array(manager.currentPhotos.enumerated()), id: \.offset) { index, photo in
+                    VStack(alignment: .leading, spacing: 2) {
+                        if let screen = screenName(at: index) {
+                            Text(screen)
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
+                        attribution(for: photo)
+                    }
+                }
+            }
         }
+    }
+
+    /// "Photo by <name> on Unsplash", both links carrying UTM parameters — the
+    /// attribution the API guidelines require.
+    private func attribution(for photo: Photo) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 0) {
+                Text("Photo by ")
+                if let photographerURL = photo.photographerURL {
+                    Link(photo.user.name, destination: photographerURL)
+                } else {
+                    Text(photo.user.name)
+                }
+                Text(" on ")
+                Link("Unsplash", destination: UnsplashAttribution.homeURL)
+            }
+            .font(.callout)
+
+            if let webURL = photo.webURL {
+                Link("View this photo", destination: webURL)
+                    .font(.caption)
+            }
+        }
+    }
+
+    /// Only worth labelling when more than one photo is on screen at once.
+    private func screenName(at index: Int) -> String? {
+        guard manager.currentPhotos.count > 1 else { return nil }
+        let screens = NSScreen.screens
+        return index < screens.count ? screens[index].localizedName : nil
     }
 
     private var actions: some View {
