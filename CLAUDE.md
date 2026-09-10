@@ -6,6 +6,7 @@ macOS menu bar app that rotates the desktop wallpaper from Unsplash. See README.
 
 ```
 xcodebuild -project Wallpaper.xcodeproj -scheme Wallpaper -configuration Debug build
+xcodebuild test -project Wallpaper.xcodeproj -scheme Wallpaper -destination 'platform=macOS'
 ```
 
 ## Non-obvious constraints
@@ -50,6 +51,7 @@ Wallpaper/
 ├─ Shared/                views used by both setup and settings
 └─ Core/                  Keychain, Settings, Source, UnsplashClient, ImageCache,
                           WallpaperSetter, Scheduler, WallpaperManager, LoginItem
+WallpaperTests/          unit tests for the pure logic
 Tools/MakeAppIcon.swift  draws the app icon, run by hand:
                          `swift Tools/MakeAppIcon.swift Wallpaper/Assets.xcassets/AppIcon.appiconset`
 ```
@@ -57,6 +59,19 @@ Tools/MakeAppIcon.swift  draws the app icon, run by hand:
 - `Tools/` sits outside `Wallpaper/` on purpose. `Wallpaper/` is a synchronized group, so anything dropped in it is compiled into the app — a build script placed there would break the build.
 
 - **Rotation is started in exactly two places:** `AppDelegate.applicationDidFinishLaunching` for a configured user, and the last step of onboarding. `WallpaperManager.shared` is the single instance both reach.
+
+## Tests
+
+`WallpaperTests` covers what can be checked without macOS in the loop: the
+`Source` parser, attribution links, the request estimate, `Photo.downloadURL`
+and `ImageCache` naming and eviction. Everything the wallpaper actually touches
+— Spaces, displays, the scheduler, the network — is deliberately untested;
+mocking it would test the mock, and every real bug there came from macOS
+behaving unlike its documentation.
+
+- **The test bundle is hosted in the app, so a test run launches it.** `AppDelegate` checks `XCTestConfigurationFilePath` and skips `start()`, otherwise running the tests would change the developer's own wallpaper.
+- `ImageCache` takes `session:` and `directory:`, which is what makes it testable: a `URLProtocol` stub serves the bytes and a temporary folder stands in for Application Support. The stub answers 500 for any URL containing `fail`, so it needs no mutable state and is safe under parallel tests.
+- `UnsplashAttribution.applicationName` is global mutable state. Every test that reads or writes it lives in one `.serialized` suite; putting an attribution assertion anywhere else will flake.
 
 ## Conventions
 

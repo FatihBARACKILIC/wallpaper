@@ -29,7 +29,14 @@ struct WallpaperApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var manager: WallpaperManager { .shared }
 
+    /// The unit tests are hosted inside this app, so running them launches it.
+    /// Without this the test run would change the developer's own wallpaper.
+    private var isRunningTests: Bool {
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
+        guard !isRunningTests else { return }
         // Setup starts rotation itself once it completes; starting here too
         // would fetch photos before there is a key to fetch them with.
         guard manager.settings.settings.hasCompletedOnboarding else { return }
