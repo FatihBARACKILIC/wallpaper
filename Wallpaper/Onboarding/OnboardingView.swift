@@ -145,7 +145,7 @@ struct IntervalPicker: View {
             }
 
             let requests = settings.settings.interval
-                .estimatedRequestsPerHour(screenCount: photosPerChange)
+                .estimatedRequestsPerHour(photosPerChange: photosPerChange)
             if requests > 0 {
                 Text("About \(requests) Unsplash requests per hour\(requests > 50 ? " — above a demo key's 50/hour limit." : ".")")
                     .font(.caption)

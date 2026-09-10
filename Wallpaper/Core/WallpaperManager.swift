@@ -196,19 +196,33 @@ final class WallpaperManager {
         }
 
         let photos = try await client.randomPhotos(count: count, from: source)
-        let sizes = WallpaperSetter.screenPixelSizes()
-        let covering = WallpaperSetter.coveringPixelSize()
 
         var results: [(photo: Photo, url: URL)] = []
         for (index, photo) in photos.prefix(count).enumerated() {
-            // Per-screen mode sizes each download for its own screen.
-            let size = settings.settings.monitorMode == .differentPerScreen && index < sizes.count
-                ? sizes[index]
-                : covering
+            let size = downloadSize(forScreenAt: index)
             results.append((photo, try await cache.download(photo, pixelSize: size)))
         }
 
         return results
+    }
+
+    /// `nil` means "leave the photo at its own size".
+    private func downloadSize(forScreenAt index: Int) -> CGSize? {
+        guard settings.settings.photoResolution != .original else { return nil }
+
+        let sizes = WallpaperSetter.screenPixelSizes()
+
+        // Per-screen mode already knows exactly which screen this photo is for.
+        if settings.settings.monitorMode == .differentPerScreen, index < sizes.count {
+            return sizes[index]
+        }
+
+        switch settings.settings.photoResolution {
+        case .coverAllScreens:
+            return WallpaperSetter.coveringPixelSize()
+        case .largestScreen, .original:
+            return WallpaperSetter.largestScreenPixelSize()
+        }
     }
 
     // MARK: - Failure recovery

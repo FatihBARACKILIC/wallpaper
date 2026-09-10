@@ -17,6 +17,7 @@ Built to stay out of the way: no Dock icon, no windows unless you open them, and
 - **Survives interruptions** — a change missed while asleep, offline or shut down happens as soon as it can
 - **Keeps going when Unsplash doesn't** — out of quota or offline, it rotates through photos you already have
 - **Rate limit gauge** — see how much of your hourly Unsplash quota is left
+- **Download size** — match the largest display, fit every display, or keep the full resolution
 - **Storage limits** — cap the photo cache by count and size, or turn the cap off entirely
 - **Findable filenames** — every photo is saved with the photographer, a description and its Unsplash ID
 - **Proper attribution** — the photographer is credited and linked in the menu bar, as Unsplash requires
@@ -35,7 +36,7 @@ Built to stay out of the way: no Dock icon, no windows unless you open them, and
 
 Enter the name you gave the application during setup as well — Unsplash expects attribution links to identify the application that referred the visit.
 
-New applications start in Demo mode with 50 requests per hour, which is plenty — a wallpaper change costs about 2 requests.
+New applications start in Demo mode with 50 requests per hour, which is plenty. A wallpaper change costs one request to pick the photos plus one per photo to report the download, as the API guidelines require — so two requests for a single photo. Downloading the image itself costs nothing.
 
 The same instructions are available inside the app, during setup and in Settings.
 

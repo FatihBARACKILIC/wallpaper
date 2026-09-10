@@ -52,18 +52,28 @@ struct Photo: Codable, Hashable, Identifiable, Sendable {
         return text?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
     }
 
-    /// A CDN URL sized for the given screen. Resizing happens at Unsplash, so we
-    /// download a screen-sized JPEG instead of a 20 MP original.
-    func downloadURL(pixelWidth: Int, pixelHeight: Int) -> URL? {
+    /// A CDN URL for the photo. Resizing happens at Unsplash, so a screen-sized
+    /// JPEG costs about 1 MB instead of the 10–30 MB original.
+    ///
+    /// - Parameter pixelSize: the size to crop to, or `nil` to keep the photo's
+    ///   own dimensions.
+    func downloadURL(pixelSize: CGSize?) -> URL? {
         guard var components = URLComponents(string: urls.raw) else { return URL(string: urls.full) }
 
         var items = components.queryItems ?? []
         items.removeAll { ["w", "h", "fit", "crop", "q", "fm", "dpr"].contains($0.name) }
+
+        if let pixelSize {
+            items.append(contentsOf: [
+                URLQueryItem(name: "w", value: String(Int(pixelSize.width))),
+                URLQueryItem(name: "h", value: String(Int(pixelSize.height))),
+                URLQueryItem(name: "fit", value: "crop"),
+                URLQueryItem(name: "crop", value: "entropy"),
+            ])
+        }
+
+        // Still transcode: the raw original can be a 50 MB uncompressed file.
         items.append(contentsOf: [
-            URLQueryItem(name: "w", value: String(pixelWidth)),
-            URLQueryItem(name: "h", value: String(pixelHeight)),
-            URLQueryItem(name: "fit", value: "crop"),
-            URLQueryItem(name: "crop", value: "entropy"),
             URLQueryItem(name: "q", value: "85"),
             URLQueryItem(name: "fm", value: "jpg"),
         ])

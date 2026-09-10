@@ -19,6 +19,12 @@ enum WallpaperSetter {
 
     static var screenCount: Int { NSScreen.screens.count }
 
+    /// The biggest attached screen, by pixel count.
+    static func largestScreenPixelSize() -> CGSize {
+        screenPixelSizes().max { $0.width * $0.height < $1.width * $1.height }
+            ?? CGSize(width: 2560, height: 1440)
+    }
+
     /// The smallest size that can fill every screen without being scaled up.
     ///
     /// Not the largest screen by area: an ultra-wide monitor can beat a Retina

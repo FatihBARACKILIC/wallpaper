@@ -39,10 +39,45 @@ enum ChangeInterval: Codable, Hashable {
 
     /// Roughly how many API requests this interval costs per hour, used to warn
     /// the user before they outrun a 50/hour demo key.
-    func estimatedRequestsPerHour(screenCount: Int) -> Int {
+    ///
+    /// One change is one `/photos/random` call — `count` fetches every photo at
+    /// once — plus one download report per photo, which the API guidelines
+    /// require and which counts against the limit. The image bytes come from
+    /// the CDN and do not count.
+    func estimatedRequestsPerHour(photosPerChange: Int) -> Int {
         guard let duration, duration > 0 else { return 0 }
         let changesPerHour = 3600.0 / duration
-        return Int((changesPerHour * Double(screenCount) * 2).rounded(.up))
+        return Int((changesPerHour * Double(1 + max(1, photosPerChange))).rounded(.up))
+    }
+}
+
+/// How large a photo to download.
+enum PhotoResolution: String, Codable, CaseIterable {
+    /// The biggest attached screen. Anything smaller crops from it.
+    case largestScreen
+    /// Largest width *and* largest height across screens, so no screen ever
+    /// has to scale the photo up.
+    case coverAllScreens
+    /// The photo as Unsplash has it. Much larger files.
+    case original
+
+    var displayName: String {
+        switch self {
+        case .largestScreen: "Match the largest display"
+        case .coverAllScreens: "Fit every display automatically"
+        case .original: "Full resolution"
+        }
+    }
+
+    var explanation: String {
+        switch self {
+        case .largestScreen:
+            "Sized to your biggest screen. About 1 MB per photo."
+        case .coverAllScreens:
+            "Sized so no display ever scales a photo up. Slightly larger files than the option above."
+        case .original:
+            "Downloads photos at their original size — often 10–30 MB each, filling the storage limit far faster."
+        }
     }
 }
 
@@ -75,6 +110,7 @@ struct AppSettings: Codable, Hashable {
     var applicationName = UnsplashAttribution.defaultApplicationName
     var interval: ChangeInterval = .seconds(60 * 60)
     var monitorMode: MonitorMode = .sameOnAllScreens
+    var photoResolution: PhotoResolution = .largestScreen
     var storageLimit = StorageLimit()
     var fadeTransition = true
     var launchAtLogin = false

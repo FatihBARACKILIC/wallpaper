@@ -81,9 +81,10 @@ final class ImageCache {
 
     // MARK: - Downloading
 
-    /// Downloads `photo` sized for `pixelSize` and returns the local file.
-    /// Re-uses an existing file when the same photo is already cached.
-    func download(_ photo: Photo, pixelSize: CGSize) async throws -> URL {
+    /// Downloads `photo` sized for `pixelSize` — or at its own size when that
+    /// is `nil` — and returns the local file. Re-uses an existing file when the
+    /// same photo is already cached.
+    func download(_ photo: Photo, pixelSize: CGSize?) async throws -> URL {
         let destination = directory.appending(path: filename(for: photo))
         if fileManager.fileExists(atPath: destination.path) {
             if index[destination.lastPathComponent] == nil {
@@ -93,10 +94,7 @@ final class ImageCache {
             return destination
         }
 
-        guard let remote = photo.downloadURL(
-            pixelWidth: Int(pixelSize.width),
-            pixelHeight: Int(pixelSize.height)
-        ) else {
+        guard let remote = photo.downloadURL(pixelSize: pixelSize) else {
             throw UnsplashError.unexpectedStatus(-1)
         }
 

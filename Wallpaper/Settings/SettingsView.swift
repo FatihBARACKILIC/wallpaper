@@ -34,6 +34,8 @@ private struct GeneralSettings: View {
                 IntervalPicker(settings: manager.settings)
                 MonitorModePicker(settings: manager.settings)
 
+                ResolutionPicker(settings: manager.settings)
+
                 Toggle("Fade between wallpapers", isOn: Binding(
                     get: { manager.settings.settings.fadeTransition },
                     set: { new in manager.settings.update { $0.fadeTransition = new } }
@@ -63,6 +65,28 @@ private struct GeneralSettings: View {
         }
         .formStyle(.grouped)
         .onChange(of: manager.settings.settings.interval) { manager.intervalChanged() }
+    }
+}
+
+/// How large a photo to download. Bigger means better on a future larger
+/// display, and a storage limit that fills much faster.
+private struct ResolutionPicker: View {
+    @Bindable var settings: SettingsStore
+
+    var body: some View {
+        Picker("Download size", selection: Binding(
+            get: { settings.settings.photoResolution },
+            set: { new in settings.update { $0.photoResolution = new } }
+        )) {
+            ForEach(PhotoResolution.allCases, id: \.self) { resolution in
+                Text(resolution.displayName).tag(resolution)
+            }
+        }
+
+        Text(settings.settings.photoResolution.explanation)
+            .font(.caption)
+            .foregroundStyle(settings.settings.photoResolution == .original ? .orange : .secondary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 
