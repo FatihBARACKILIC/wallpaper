@@ -79,14 +79,16 @@ enum Uninstaller {
         manager.stopEverything()
         restoreDefaultWallpaper()
 
+        // `unregister` throws when there was no registration to remove, so the
+        // error proves nothing on its own: a Mac where "open at login" was never
+        // switched on would be told to go and remove a login item that does not
+        // exist. Only the status afterwards says whether anything is left.
         do {
-            // `unregister` on an app that was never registered is a no-op, so
-            // this needs no `isEnabled` check.
             try LoginItem.setEnabled(false)
         } catch {
-            report.loginItemFailed = true
-            Log.wallpaper.error("uninstall: login item: \(error.localizedDescription, privacy: .public)")
+            Log.wallpaper.debug("uninstall: login item: \(error.localizedDescription, privacy: .public)")
         }
+        report.loginItemFailed = LoginItem.isRegistered
 
         Keychain.delete()
         report.keychainFailed = Keychain.read() != nil
