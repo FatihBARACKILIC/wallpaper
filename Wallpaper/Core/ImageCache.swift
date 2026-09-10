@@ -190,7 +190,16 @@ final class ImageCache {
         }
 
         let pinnedPaths = Set(pinned.map(\.standardizedFileURL.path))
-        let files = contents().sorted { $0.created < $1.created }
+
+        // Files with no index entry go first: without knowing which photo they
+        // are we cannot credit the photographer, so they can never be re-used
+        // and would only crowd out photos that can.
+        let files = contents().sorted { left, right in
+            let leftKnown = index[left.url.lastPathComponent] != nil
+            let rightKnown = index[right.url.lastPathComponent] != nil
+            if leftKnown != rightKnown { return !leftKnown }
+            return left.created < right.created
+        }
 
         var count = files.count
         var bytes = files.reduce(Int64(0)) { $0 + $1.size }
