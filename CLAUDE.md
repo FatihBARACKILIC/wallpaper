@@ -14,6 +14,8 @@ xcodebuild -project Wallpaper.xcodeproj -scheme Wallpaper -configuration Debug b
 - **`LSUIElement = YES`** — no Dock icon. There is no main window; `MenuBarExtra` is the only always-present scene. Settings and onboarding are opened on demand.
 - **Idle cost is the primary constraint.** No polling timers, no views alive while the menu is closed, no decoded images held in memory. Scheduling goes through `NSBackgroundActivityScheduler` so the system can coalesce wakeups.
 - **The next photo is always prefetched.** A wallpaper change should hit the disk, not the network.
+- **A failed change retries on its own.** `WallpaperManager.recovery(for:)` sorts failures into "wait for the network", "retry with backoff" and "the user has to fix it" — waiting a whole interval is wrong when the interval is a week. `NWPathMonitor` runs *only* while offline; an idle app has no monitor.
+- **Displays are watched.** `didChangeScreenParametersNotification` (debounced) re-dresses screens from files already on disk; only a newly attached display in per-screen mode costs a request.
 - **`nextChangeDate` is persisted.** On launch or wake, a missed change fires immediately — long intervals (1 day, 1 week) span reboots.
 - **`NSWorkspace.desktopImageURL(for:)` lags behind writes.** macOS applies the wallpaper via a separate agent, so reading straight after setting returns the *previous* URL. Treat `setDesktopImageURL` not throwing as success; never verify with the getter.
 

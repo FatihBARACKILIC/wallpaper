@@ -22,9 +22,9 @@ struct MenuContent: View {
 
             if let message = manager.status.errorMessage {
                 Divider()
-                Label(message, systemImage: "exclamationmark.triangle.fill")
+                Label(message, systemImage: isOffline ? "wifi.slash" : "exclamationmark.triangle.fill")
                     .font(.caption)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(isOffline ? Color.secondary : Color.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -144,6 +144,11 @@ struct MenuContent: View {
     }
 
     // MARK: - Helpers
+
+    private var isOffline: Bool {
+        if case .waitingForNetwork = manager.status { return true }
+        return false
+    }
 
     private var nextChangeDescription: String {
         if manager.status == .working { return "Changing…" }

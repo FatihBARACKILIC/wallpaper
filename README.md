@@ -12,6 +12,7 @@ Built to stay out of the way: no Dock icon, no windows unless you open them, and
 - **Flexible schedule** — 5 minutes to 1 week, a custom interval, or manual only
 - **Multi-monitor** — same photo on every screen, or a different photo per screen
 - **Skip button** — don't like the current photo? Change it instantly
+- **Survives interruptions** — a change missed while asleep, offline or shut down happens as soon as it can
 - **Rate limit gauge** — see how much of your hourly Unsplash quota is left
 - **Storage limits** — cap the photo cache by count and size, or turn the cap off entirely
 - **Findable filenames** — every photo is saved with the photographer, a description and its Unsplash ID
