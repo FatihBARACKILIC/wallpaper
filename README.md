@@ -66,7 +66,7 @@ By default the cache is capped at 100 photos or 1 GB, whichever comes first, evi
 
 It optionally moves the app itself to the Trash, and puts your desktop back to the macOS default wallpaper first — Spaces you aren't looking at keep the old photo until you pick one yourself in System Settings. Anything it fails to remove is listed with its path so you can finish by hand.
 
-Your Unsplash application on unsplash.com is yours and is untouched; delete it there if you want it gone.
+Two things it deliberately leaves alone. macOS keeps a metadata-only stub at `~/Library/Containers/com.barackilic.Wallpaper`; removing it would need Full Disk Access, which this app should never ask for — drag it to the Trash in Finder if you want it gone. And your Unsplash application on unsplash.com is yours: delete it there.
 
 ## Attribution
 
