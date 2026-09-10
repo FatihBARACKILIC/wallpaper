@@ -123,8 +123,7 @@ struct OnboardingView: View {
         }
 
         manager.settings.update { $0.hasCompletedOnboarding = true }
-        manager.start()
-        Task { await manager.changeNow() }
+        Task { await manager.completeSetup() }
         dismiss()
     }
 }

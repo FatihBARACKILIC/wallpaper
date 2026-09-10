@@ -58,6 +58,10 @@ final class WallpaperManager {
     private var prefetched: [(photo: Photo, url: URL)] = []
     private var prefetchTask: Task<Void, Never>?
 
+    /// Guards against two changes overlapping — they would race on `current`
+    /// and stack two fade overlays on top of each other.
+    private var isChanging = false
+
     private var retryTask: Task<Void, Never>?
     private var consecutiveFailures = 0
     private var networkMonitor: NWPathMonitor?
@@ -130,6 +134,17 @@ final class WallpaperManager {
         start()
     }
 
+    /// Finishes setup: clears any schedule left from an earlier configuration,
+    /// starts rotation and puts the first wallpaper up right away.
+    ///
+    /// The reset matters — without it `start()` sees a due date that has long
+    /// passed, fires a change for it, and the first wallpaper lands twice.
+    func completeSetup() async {
+        scheduler.reset()
+        start()
+        await changeNow()
+    }
+
     // MARK: - Changing
 
     /// Applies the next wallpaper. Used by both the scheduler and the "change
@@ -141,6 +156,13 @@ final class WallpaperManager {
     }
 
     private func changeWallpaper() async {
+        guard !isChanging else {
+            Log.wallpaper.debug("change already in progress, ignoring")
+            return
+        }
+        isChanging = true
+        defer { isChanging = false }
+
         guard settings.hasAccessKey else {
             status = .failed(UnsplashError.missingAccessKey.localizedDescription)
             return

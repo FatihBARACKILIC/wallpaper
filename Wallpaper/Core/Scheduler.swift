@@ -64,6 +64,14 @@ final class Scheduler {
         activity = nil
     }
 
+    /// Forgets when the next change was due. Used when setup finishes: a due
+    /// date left over from an earlier configuration would fire a change on top
+    /// of the one setup triggers itself.
+    func reset() {
+        nextChangeDate = nil
+        defaults.removeObject(forKey: Self.nextChangeKey)
+    }
+
     /// Runs a change now and pushes the next one a full interval out. Used by
     /// the "change now" menu item so a manual skip doesn't leave an automatic
     /// change moments behind it.
