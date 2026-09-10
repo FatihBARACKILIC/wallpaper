@@ -15,12 +15,14 @@ xcodebuild -project Wallpaper.xcodeproj -scheme Wallpaper -configuration Debug b
 - **Idle cost is the primary constraint.** No polling timers, no views alive while the menu is closed, no decoded images held in memory. Scheduling goes through `NSBackgroundActivityScheduler` so the system can coalesce wakeups.
 - **The next photo is always prefetched.** A wallpaper change should hit the disk, not the network.
 - **`nextChangeDate` is persisted.** On launch or wake, a missed change fires immediately — long intervals (1 day, 1 week) span reboots.
+- **`NSWorkspace.desktopImageURL(for:)` lags behind writes.** macOS applies the wallpaper via a separate agent, so reading straight after setting returns the *previous* URL. Treat `setDesktopImageURL` not throwing as success; never verify with the getter.
 
 ## Unsplash API rules (not optional)
 
 - Hitting `photo.links.download_location` after using a photo is required by the API guidelines. It counts against the rate limit; the image bytes from the CDN do not.
 - Photographer name + link back to the photo must be visible in the UI.
 - Read `X-Ratelimit-Limit` / `X-Ratelimit-Remaining` from every response and persist them with a timestamp — the gauge must never cost a request to refresh.
+- `/photos/random` filters topics by ID, not slug. `UnsplashClient` resolves a slug once via `/topics/<slug>` and caches the ID in UserDefaults.
 
 ## Secrets
 
