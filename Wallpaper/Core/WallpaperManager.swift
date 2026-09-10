@@ -31,6 +31,10 @@ final class WallpaperManager {
     private var prefetched: [(photo: Photo, url: URL)] = []
     private var prefetchTask: Task<Void, Never>?
 
+    /// One instance for the whole app: the scenes and the app delegate all
+    /// need to reach the same state.
+    static let shared = WallpaperManager()
+
     init(
         settings: SettingsStore = SettingsStore(),
         client: UnsplashClient = UnsplashClient(),

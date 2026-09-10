@@ -32,13 +32,16 @@ The user's Access Key lives in the Keychain (`kSecUseDataProtectionKeychain`, `k
 
 ```
 Wallpaper/
-├─ WallpaperApp.swift     MenuBarExtra + Settings scenes
-├─ Menu/                  menu bar content
-├─ Onboarding/            first-run setup
-├─ Settings/              key, sources, interval, monitor mode, storage
-└─ Core/                  Keychain, Settings, Source, UnsplashClient,
-                          ImageCache, WallpaperSetter, Scheduler
+├─ WallpaperApp.swift     scenes + AppDelegate (launch and wake hooks)
+├─ Menu/                  menu bar panel
+├─ Onboarding/            first-run setup, plus the interval/monitor pickers
+├─ Settings/              tabbed settings window
+├─ Shared/                views used by both setup and settings
+└─ Core/                  Keychain, Settings, Source, UnsplashClient, ImageCache,
+                          WallpaperSetter, Scheduler, WallpaperManager, LoginItem
 ```
+
+- **Rotation is started in exactly two places:** `AppDelegate.applicationDidFinishLaunching` for a configured user, and the last step of onboarding. `WallpaperManager.shared` is the single instance both reach.
 
 ## Conventions
 
