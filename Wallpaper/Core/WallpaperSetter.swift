@@ -19,6 +19,22 @@ enum WallpaperSetter {
 
     static var screenCount: Int { NSScreen.screens.count }
 
+    /// The smallest size that can fill every screen without being scaled up.
+    ///
+    /// Not the largest screen by area: an ultra-wide monitor can beat a Retina
+    /// display on area while being shorter, and a photo sized for it would be
+    /// stretched on the taller screen. Taking the largest width *and* the
+    /// largest height means every screen crops rather than upscales.
+    static func coveringPixelSize() -> CGSize {
+        let sizes = screenPixelSizes()
+        guard !sizes.isEmpty else { return CGSize(width: 2560, height: 1440) }
+
+        return CGSize(
+            width: sizes.map(\.width).max() ?? 2560,
+            height: sizes.map(\.height).max() ?? 1440
+        )
+    }
+
     /// Sets one photo on every screen.
     static func apply(_ url: URL) throws {
         for screen in NSScreen.screens {

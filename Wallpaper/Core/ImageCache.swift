@@ -142,13 +142,21 @@ final class ImageCache {
     }
 
     private static func sanitize(_ text: String, joinedBy separator: String = " ") -> String {
-        let cleaned = text
+        let words = text
             .replacingOccurrences(of: "—", with: "-")
             .components(separatedBy: CharacterSet(charactersIn: "/\\:.").union(.whitespacesAndNewlines))
             .filter { !$0.isEmpty }
-            .joined(separator: separator)
 
-        return String(cleaned.prefix(80))
+        // Cut at a word boundary rather than mid-word, so the name still reads
+        // as a phrase instead of trailing off with a stray separator.
+        var result = ""
+        for word in words {
+            let candidate = result.isEmpty ? word : result + separator + word
+            if candidate.count > 60 { break }
+            result = candidate
+        }
+
+        return result.isEmpty ? String(words.first?.prefix(60) ?? "") : result
     }
 
     /// Writes the Unsplash page URL into the file's "Where from" metadata, so
