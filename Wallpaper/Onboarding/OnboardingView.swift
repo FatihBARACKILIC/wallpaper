@@ -30,21 +30,27 @@ struct OnboardingView: View {
 
             Divider()
 
-            Group {
-                switch step {
-                case .key: keyStep
-                case .sources: SourceEditor(settings: manager.settings)
-                case .schedule: scheduleStep
+            // The key step is taller than the window; scroll the step content
+            // so the header and the Continue button are never pushed off.
+            ScrollView {
+                Group {
+                    switch step {
+                    case .key: keyStep
+                    case .sources: SourceEditor(settings: manager.settings)
+                    case .schedule: scheduleStep
+                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .padding(.horizontal, 1)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             Divider()
 
             footer
         }
         .padding(20)
-        .frame(width: 460, height: 480)
+        .frame(width: 480, height: 540)
         .onAppear { key = manager.settings.accessKey ?? "" }
     }
 
@@ -81,8 +87,6 @@ struct OnboardingView: View {
             IntervalPicker(settings: manager.settings)
 
             MonitorModePicker(settings: manager.settings)
-
-            Spacer()
         }
     }
 
