@@ -33,6 +33,11 @@ private struct GeneralSettings: View {
             Section {
                 IntervalPicker(settings: manager.settings)
                 MonitorModePicker(settings: manager.settings)
+
+                Toggle("Fade between wallpapers", isOn: Binding(
+                    get: { manager.settings.settings.fadeTransition },
+                    set: { new in manager.settings.update { $0.fadeTransition = new } }
+                ))
             }
 
             Section {

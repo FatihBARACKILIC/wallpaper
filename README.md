@@ -13,6 +13,7 @@ Built to stay out of the way: no Dock icon, no windows unless you open them, and
 - **Multi-monitor** — same photo on every screen, or a different photo per screen
 - **Every desktop** — Spaces you aren't looking at are updated as soon as you switch to them
 - **Skip button** — don't like the current photo? Change it instantly
+- **Cross-fade** — wallpapers fade into each other instead of snapping; switchable off
 - **Survives interruptions** — a change missed while asleep, offline or shut down happens as soon as it can
 - **Rate limit gauge** — see how much of your hourly Unsplash quota is left
 - **Storage limits** — cap the photo cache by count and size, or turn the cap off entirely

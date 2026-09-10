@@ -76,6 +76,7 @@ struct AppSettings: Codable, Hashable {
     var interval: ChangeInterval = .seconds(60 * 60)
     var monitorMode: MonitorMode = .sameOnAllScreens
     var storageLimit = StorageLimit()
+    var fadeTransition = true
     var launchAtLogin = false
     var hasCompletedOnboarding = false
 }

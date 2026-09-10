@@ -151,11 +151,7 @@ final class WallpaperManager {
             let needed = neededPhotoCount
             let batch = try await takePhotos(count: needed)
 
-            if settings.settings.monitorMode == .sameOnAllScreens || batch.count == 1 {
-                try WallpaperSetter.apply(batch[0].url)
-            } else {
-                try WallpaperSetter.apply(perScreen: batch.map(\.url))
-            }
+            try await applyWithTransition(batch.map(\.url))
 
             current = batch.map { Applied(photo: $0.photo, url: $0.url) }
             Log.wallpaper.info("wallpaper changed: \(batch.count, privacy: .public) photo(s)")
@@ -360,8 +356,34 @@ final class WallpaperManager {
         applyCurrent()
     }
 
+    /// Applies a new set of photos, cross-fading if the user wants that.
+    private func applyWithTransition(_ urls: [URL]) async throws {
+        let sameForAll = settings.settings.monitorMode == .sameOnAllScreens || urls.count == 1
+
+        let apply = {
+            if sameForAll {
+                try WallpaperSetter.apply(urls[0])
+            } else {
+                try WallpaperSetter.apply(perScreen: urls)
+            }
+        }
+
+        guard settings.settings.fadeTransition else {
+            try apply()
+            return
+        }
+
+        let pairs = NSScreen.screens.enumerated().map { index, screen in
+            (screen: screen, url: sameForAll ? urls[0] : urls[min(index, urls.count - 1)])
+        }
+        try await WallpaperFade.run(pairs, apply: apply)
+    }
+
     /// Re-applies the photos we already have. Costs nothing but a call into the
     /// wallpaper agent — the files are already on disk.
+    ///
+    /// Deliberately never fades: this runs on every Space switch, and fading
+    /// there would animate the desktop each time the user changes desktop.
     private func applyCurrent() {
         guard !current.isEmpty else {
             Log.wallpaper.debug("re-apply skipped: nothing applied yet")
