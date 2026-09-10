@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import Network
+import OSLog
 
 /// Coordinates everything: picks a source, fetches photos, applies them and
 /// keeps the next one ready on disk.
@@ -24,9 +25,20 @@ final class WallpaperManager {
     private(set) var status: Status = .idle
     private(set) var lastChangeDate: Date?
 
-    /// What is on screen right now, in screen order. Kept with the local file
-    /// so a display can be re-dressed without going back to the network.
-    private(set) var current: [(photo: Photo, url: URL)] = []
+    /// A photo and the local file it was applied from.
+    struct Applied: Codable, Hashable {
+        var photo: Photo
+        var url: URL
+    }
+
+    /// What is on screen right now, in screen order.
+    ///
+    /// Persisted, for two reasons: a Space coming forward after a relaunch has
+    /// to be re-dressed from these files, and the menu has to keep crediting
+    /// the photographers whose work is still on screen.
+    private(set) var current: [Applied] = [] {
+        didSet { persistCurrent() }
+    }
 
     /// Photos currently on screen — every one of them has to be credited.
     var currentPhotos: [Photo] { current.map(\.photo) }
@@ -65,6 +77,26 @@ final class WallpaperManager {
         self.client = client
         self.cache = cache
         self.scheduler = scheduler
+        self.current = Self.restoreCurrent()
+    }
+
+    // MARK: - Persisted state
+
+    private static let currentKey = "currentWallpapers"
+
+    /// Drops entries whose file has since been deleted — re-applying a missing
+    /// file would clear the desktop.
+    private static func restoreCurrent() -> [Applied] {
+        guard let data = UserDefaults.standard.data(forKey: currentKey),
+              let decoded = try? JSONDecoder().decode([Applied].self, from: data)
+        else { return [] }
+
+        return decoded.filter { FileManager.default.fileExists(atPath: $0.url.path) }
+    }
+
+    private func persistCurrent() {
+        guard let data = try? JSONEncoder().encode(current) else { return }
+        UserDefaults.standard.set(data, forKey: Self.currentKey)
     }
 
     var isReady: Bool {
@@ -80,6 +112,7 @@ final class WallpaperManager {
         }
         observeScreenChanges()
         observeSpaceChanges()
+        Log.wallpaper.info("rotation started, restored \(self.current.count, privacy: .public) applied photo(s)")
 
         Task {
             await scheduler.fireIfOverdue()
@@ -124,7 +157,8 @@ final class WallpaperManager {
                 try WallpaperSetter.apply(perScreen: batch.map(\.url))
             }
 
-            current = batch
+            current = batch.map { Applied(photo: $0.photo, url: $0.url) }
+            Log.wallpaper.info("wallpaper changed: \(batch.count, privacy: .public) photo(s)")
             lastChangeDate = Date()
             status = .idle
             consecutiveFailures = 0
@@ -299,6 +333,7 @@ final class WallpaperManager {
     /// unplugging one shifts the rest along. Debounced, because the
     /// notification arrives several times per change.
     private func screenConfigurationChanged() {
+        Log.wallpaper.debug("screen configuration changed")
         screenChangeTask?.cancel()
         screenChangeTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(1.5))
@@ -328,12 +363,22 @@ final class WallpaperManager {
     /// Re-applies the photos we already have. Costs nothing but a call into the
     /// wallpaper agent — the files are already on disk.
     private func applyCurrent() {
-        guard !current.isEmpty else { return }
+        guard !current.isEmpty else {
+            Log.wallpaper.debug("re-apply skipped: nothing applied yet")
+            return
+        }
 
-        if settings.settings.monitorMode == .sameOnAllScreens || current.count == 1 {
-            try? WallpaperSetter.apply(current[0].url)
-        } else {
-            try? WallpaperSetter.apply(perScreen: current.map(\.url))
+        do {
+            if settings.settings.monitorMode == .sameOnAllScreens || current.count == 1 {
+                try WallpaperSetter.apply(current[0].url)
+            } else {
+                try WallpaperSetter.apply(perScreen: current.map(\.url))
+            }
+            Log.wallpaper.debug(
+                "re-applied \(self.current.count, privacy: .public) photo(s) to \(WallpaperSetter.screenCount, privacy: .public) screen(s)"
+            )
+        } catch {
+            Log.wallpaper.error("re-apply failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -359,6 +404,8 @@ final class WallpaperManager {
     }
 
     private func activeSpaceChanged() {
+        Log.wallpaper.debug("active Space changed")
+
         // Immediately, so a Space that has not been dressed yet shows the right
         // photo as soon as possible...
         applyCurrent()
