@@ -1,0 +1,123 @@
+import SwiftUI
+
+/// The menu bar panel. Nothing here exists while the menu is closed, which is
+/// what keeps the app's idle cost at zero.
+struct MenuContent: View {
+    @Bindable var manager: WallpaperManager
+
+    @Environment(\.openSettings) private var openSettings
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if manager.isReady {
+                currentPhoto
+                Divider()
+                actions
+                Divider()
+                RateLimitGauge(rateLimit: manager.client.rateLimit)
+            } else {
+                setupPrompt
+            }
+
+            if let message = manager.status.errorMessage {
+                Divider()
+                Label(message, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Divider()
+            footer
+        }
+        .padding(12)
+        .frame(width: 300)
+    }
+
+    // MARK: - Sections
+
+    @ViewBuilder
+    private var currentPhoto: some View {
+        if let photo = manager.currentPhotos.first {
+            VStack(alignment: .leading, spacing: 2) {
+                // Attribution is required by the Unsplash API guidelines.
+                Link(destination: URL(string: photo.user.links.html)!) {
+                    Text("Photo by \(photo.user.name)")
+                        .font(.callout.weight(.medium))
+                }
+                if let webURL = photo.webURL {
+                    Link("View on Unsplash", destination: webURL)
+                        .font(.caption)
+                }
+            }
+        } else {
+            Text("No wallpaper set yet.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var actions: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                Task { await manager.changeNow() }
+            } label: {
+                Label("Change wallpaper now", systemImage: "arrow.triangle.2.circlepath")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .keyboardShortcut("r")
+            .disabled(manager.status == .working)
+
+            Text(nextChangeDescription)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var setupPrompt: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Setup isn't finished")
+                .font(.callout.weight(.medium))
+            Text(manager.settings.hasAccessKey
+                 ? "Add at least one source to start rotating wallpapers."
+                 : "Add your Unsplash Access Key to get started.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button("Finish setup…") {
+                openWindow(id: OnboardingWindow.id)
+                NSApp.activate(ignoringOtherApps: true)
+            }
+        }
+    }
+
+    private var footer: some View {
+        HStack {
+            Button("Settings…") {
+                openSettings()
+                NSApp.activate(ignoringOtherApps: true)
+            }
+            .keyboardShortcut(",")
+
+            Spacer()
+
+            Button("Quit") { NSApp.terminate(nil) }
+                .keyboardShortcut("q")
+        }
+        .buttonStyle(.link)
+        .font(.callout)
+    }
+
+    // MARK: - Helpers
+
+    private var nextChangeDescription: String {
+        if manager.status == .working { return "Changing…" }
+        guard let next = manager.scheduler.nextChangeDate else { return "Changes manually only" }
+
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        return "Next change \(formatter.localizedString(for: next, relativeTo: Date()))"
+    }
+}
