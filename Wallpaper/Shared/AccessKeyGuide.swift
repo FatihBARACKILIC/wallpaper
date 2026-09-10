@@ -43,15 +43,11 @@ struct AccessKeyGuide: View {
 /// Settings. Verification makes one real request so a wrong key is caught here
 /// rather than silently at the next wallpaper change.
 struct AccessKeyField: View {
+    @Bindable var settings: SettingsStore
     @Binding var key: String
     var onVerified: () -> Void
 
     @State private var verification: Verification = .idle
-
-    init(key: Binding<String>, onVerified: @escaping () -> Void) {
-        self._key = key
-        self.onVerified = onVerified
-    }
 
     enum Verification: Equatable {
         case idle
@@ -99,7 +95,9 @@ struct AccessKeyField: View {
             let client = UnsplashClient(accessKeyProvider: { candidate })
             do {
                 _ = try await client.randomPhotos(count: 1, from: Source(kind: .search, value: "nature"))
-                try Keychain.save(candidate)
+                // Through the store, never straight to the keychain: it is what
+                // tells the rest of the UI a key now exists.
+                try settings.setAccessKey(candidate)
                 verification = .valid
                 onVerified()
             } catch {

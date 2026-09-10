@@ -70,7 +70,7 @@ struct OnboardingView: View {
                 .font(.callout)
                 .fixedSize(horizontal: false, vertical: true)
 
-            AccessKeyField(key: $key) {}
+            AccessKeyField(settings: manager.settings, key: $key) {}
 
             ApplicationNameField(settings: manager.settings)
 

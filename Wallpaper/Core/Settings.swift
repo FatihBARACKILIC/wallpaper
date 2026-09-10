@@ -131,10 +131,20 @@ final class SettingsStore {
         }
     }
 
+    /// Whether a key is in the keychain.
+    ///
+    /// Mirrored here rather than read straight from the keychain each time,
+    /// because `Keychain.read()` is not observable: a Continue button that asks
+    /// the keychain directly is never told the key has arrived, and stays
+    /// disabled until the view is built again. Every write goes through this
+    /// type so the mirror cannot drift.
+    private(set) var hasAccessKey: Bool
+
     private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        self.hasAccessKey = Keychain.read()?.isEmpty == false
 
         if let data = defaults.data(forKey: Self.defaultsKey),
            let decoded = try? JSONDecoder().decode(AppSettings.self, from: data) {
@@ -164,15 +174,13 @@ final class SettingsStore {
         Keychain.read()
     }
 
-    var hasAccessKey: Bool {
-        accessKey?.isEmpty == false
-    }
-
     func setAccessKey(_ key: String) throws {
         try Keychain.save(key.trimmingCharacters(in: .whitespacesAndNewlines))
+        hasAccessKey = true
     }
 
     func clearAccessKey() {
         Keychain.delete()
+        hasAccessKey = false
     }
 }

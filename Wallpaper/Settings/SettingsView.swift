@@ -123,7 +123,7 @@ private struct AccountSettings: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                if let existing = manager.settings.accessKey, !isEditing {
+                if manager.settings.hasAccessKey, !isEditing, let existing = manager.settings.accessKey {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Access Key")
                             .font(.callout.weight(.medium))
@@ -143,7 +143,7 @@ private struct AccountSettings: View {
                         }
                     }
                 } else {
-                    AccessKeyField(key: $key) { isEditing = false }
+                    AccessKeyField(settings: manager.settings, key: $key) { isEditing = false }
                 }
 
                 ApplicationNameField(settings: manager.settings)
