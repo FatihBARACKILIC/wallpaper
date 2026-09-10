@@ -22,6 +22,7 @@ Built to stay out of the way: no Dock icon, no windows unless you open them, and
 - **Findable filenames** — every photo is saved with the photographer, a description and its Unsplash ID
 - **Proper attribution** — the photographer is credited and linked in the menu bar, as Unsplash requires
 - **Opens at login** — optional, off by default
+- **Clean uninstall** — one button removes the photos, settings and your key, and leaves nothing behind
 
 ## Requirements
 
@@ -52,6 +53,20 @@ Photos are cached in `~/Library/Application Support/Wallpaper/Photos`, named lik
 The trailing ID is the Unsplash photo ID, so `unsplash.com/photos/<id>` takes you straight to the original. The source URL is also written to the file's "Where from" metadata, visible in Finder's Get Info.
 
 By default the cache is capped at 100 photos or 1 GB, whichever comes first, evicting oldest first. You can raise, lower or disable the cap in Settings, and clear the cache at any time.
+
+## Uninstalling
+
+**Settings › General › Uninstall Wallpaper…** removes everything the app has put on this Mac:
+
+- the cached photos and their index in `~/Library/Application Support/Wallpaper`
+- settings, sources and the rotation schedule in `~/Library/Preferences`
+- the network caches in `~/Library/Caches` and `~/Library/HTTPStorages`
+- your Unsplash Access Key in the login keychain
+- the "open at login" registration
+
+It optionally moves the app itself to the Trash, and puts your desktop back to the macOS default wallpaper first — Spaces you aren't looking at keep the old photo until you pick one yourself in System Settings. Anything it fails to remove is listed with its path so you can finish by hand.
+
+Your Unsplash application on unsplash.com is yours and is untouched; delete it there if you want it gone.
 
 ## Attribution
 

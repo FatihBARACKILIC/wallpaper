@@ -134,6 +134,32 @@ final class WallpaperManager {
         start()
     }
 
+    /// Puts the app to sleep for good: no schedule, no retries, no observers,
+    /// no prefetch. Used by the uninstaller — a Space switch arriving halfway
+    /// through would re-apply a photo that has just been deleted.
+    func stopEverything() {
+        scheduler.stop()
+        cancelRetry()
+
+        prefetchTask?.cancel()
+        prefetchTask = nil
+        prefetched.removeAll()
+
+        screenChangeTask?.cancel()
+        spaceChangeTask?.cancel()
+
+        if let screenObserver {
+            NotificationCenter.default.removeObserver(screenObserver)
+            self.screenObserver = nil
+        }
+        if let spaceObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(spaceObserver)
+            self.spaceObserver = nil
+        }
+
+        Log.wallpaper.info("rotation stopped")
+    }
+
     /// Finishes setup: clears any schedule left from an earlier configuration,
     /// starts rotation and puts the first wallpaper up right away.
     ///

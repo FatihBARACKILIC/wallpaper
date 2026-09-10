@@ -27,6 +27,7 @@ private struct GeneralSettings: View {
     @Bindable var manager: WallpaperManager
     @State private var launchAtLogin = LoginItem.isEnabled
     @State private var loginError: String?
+    @State private var isUninstalling = false
 
     var body: some View {
         Form {
@@ -62,9 +63,18 @@ private struct GeneralSettings: View {
                         .foregroundStyle(.orange)
                 }
             }
+
+            Section {
+                Button("Uninstall Wallpaper…", role: .destructive) { isUninstalling = true }
+            } footer: {
+                Text("Removes the downloaded photos, your settings and your Access Key, so nothing is left behind on this Mac.")
+            }
         }
         .formStyle(.grouped)
         .onChange(of: manager.settings.settings.interval) { manager.intervalChanged() }
+        .sheet(isPresented: $isUninstalling) {
+            UninstallSheet(manager: manager)
+        }
     }
 }
 
