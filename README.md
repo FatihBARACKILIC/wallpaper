@@ -11,6 +11,7 @@ Built to stay out of the way: no Dock icon, no windows unless you open them, and
 - **Multiple sources** — mix topics, collections and search queries; each change picks one at random
 - **Flexible schedule** — 5 minutes to 1 week, a custom interval, or manual only
 - **Multi-monitor** — same photo on every screen, or a different photo per screen
+- **Every desktop** — Spaces you aren't looking at are updated as soon as you switch to them
 - **Skip button** — don't like the current photo? Change it instantly
 - **Survives interruptions** — a change missed while asleep, offline or shut down happens as soon as it can
 - **Rate limit gauge** — see how much of your hourly Unsplash quota is left
