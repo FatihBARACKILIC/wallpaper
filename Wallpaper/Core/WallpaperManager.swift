@@ -48,6 +48,9 @@ final class WallpaperManager {
     private var screenObserver: (any NSObjectProtocol)?
     private var screenChangeTask: Task<Void, Never>?
 
+    private var spaceObserver: (any NSObjectProtocol)?
+    private var spaceChangeTask: Task<Void, Never>?
+
     /// One instance for the whole app: the scenes and the app delegate all
     /// need to reach the same state.
     static let shared = WallpaperManager()
@@ -76,6 +79,7 @@ final class WallpaperManager {
             await self?.changeWallpaper()
         }
         observeScreenChanges()
+        observeSpaceChanges()
 
         Task {
             await scheduler.fireIfOverdue()
@@ -308,18 +312,64 @@ final class WallpaperManager {
 
         let screens = WallpaperSetter.screenCount
 
-        if settings.settings.monitorMode == .sameOnAllScreens {
-            try? WallpaperSetter.apply(current[0].url)
+        if settings.settings.monitorMode == .differentPerScreen, screens > current.count {
+            // A new display needs a photo of its own.
+            await changeWallpaper()
             return
         }
 
-        if screens <= current.count {
+        if settings.settings.monitorMode == .differentPerScreen {
             // Fewer displays than photos: reuse what we already have on disk.
             current = Array(current.prefix(max(1, screens)))
-            try? WallpaperSetter.apply(perScreen: current.map(\.url))
+        }
+        applyCurrent()
+    }
+
+    /// Re-applies the photos we already have. Costs nothing but a call into the
+    /// wallpaper agent — the files are already on disk.
+    private func applyCurrent() {
+        guard !current.isEmpty else { return }
+
+        if settings.settings.monitorMode == .sameOnAllScreens || current.count == 1 {
+            try? WallpaperSetter.apply(current[0].url)
         } else {
-            // A new display needs a photo of its own.
-            await changeWallpaper()
+            try? WallpaperSetter.apply(perScreen: current.map(\.url))
+        }
+    }
+
+    // MARK: - Spaces
+
+    /// macOS stores the wallpaper per *display and Space*, and
+    /// `setDesktopImageURL` only ever writes to the Space that display is
+    /// currently showing. A display sitting on another Space therefore keeps
+    /// the old photo until that Space comes forward — there is no public API to
+    /// enumerate Spaces. So re-apply whenever the active Space changes.
+    private func observeSpaceChanges() {
+        guard spaceObserver == nil else { return }
+
+        spaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.activeSpaceDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            Task { @MainActor in
+                WallpaperManager.shared.activeSpaceChanged()
+            }
+        }
+    }
+
+    private func activeSpaceChanged() {
+        // Immediately, so a Space that has not been dressed yet shows the right
+        // photo as soon as possible...
+        applyCurrent()
+
+        // ...and again once the switch has settled, since a write during the
+        // transition can be dropped.
+        spaceChangeTask?.cancel()
+        spaceChangeTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled else { return }
+            self?.applyCurrent()
         }
     }
 
