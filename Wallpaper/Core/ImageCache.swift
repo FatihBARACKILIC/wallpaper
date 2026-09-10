@@ -20,6 +20,9 @@ final class ImageCache {
 
     private(set) var stats = Stats()
 
+    /// Where the photos live, for the "Show in Finder" button.
+    var folder: URL { directory }
+
     private let directory: URL
     private let session: URLSession
     private let fileManager = FileManager.default

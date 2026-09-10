@@ -178,6 +178,16 @@ final class UnsplashClient {
         _ = try? await send(request(for: url))
     }
 
+    // MARK: - Collections
+
+    /// A collection is added by ID, which means nothing to the user. Resolve
+    /// its title once, when it is added.
+    func collectionTitle(for id: String) async throws -> String {
+        struct Collection: Decodable { let title: String }
+        let collection: Collection = try await get("/collections/\(id)", query: [])
+        return collection.title
+    }
+
     // MARK: - Topics
 
     private func topicID(for slug: String) async throws -> String {

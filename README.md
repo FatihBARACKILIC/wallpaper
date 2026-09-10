@@ -8,7 +8,7 @@ Built to stay out of the way: no Dock icon, no windows unless you open them, and
 
 - **Menu bar only** — runs in the background, no Dock icon
 - **Your own Unsplash API key** — stored encrypted in the macOS Keychain
-- **Multiple sources** — mix topics, collections and search queries; each change picks one at random
+- **Multiple sources** — mix topics, collections and search queries; each change picks one at random, listed as `t/`, `c/` and `s/` with a link to each
 - **Flexible schedule** — 5 minutes to 1 week, a custom interval, or manual only
 - **Multi-monitor** — same photo on every screen, or a different photo per screen
 - **Every desktop** — Spaces you aren't looking at are updated as soon as you switch to them

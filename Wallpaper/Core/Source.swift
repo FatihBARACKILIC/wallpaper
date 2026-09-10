@@ -15,15 +15,38 @@ struct Source: Codable, Identifiable, Hashable {
             case .search: "Search"
             }
         }
+
+        /// Single-letter tag so the three kinds are told apart at a glance.
+        var prefix: String {
+            switch self {
+            case .topic: "t"
+            case .collection: "c"
+            case .search: "s"
+            }
+        }
     }
 
     var id = UUID()
     var kind: Kind
     /// Topic slug, collection ID, or search query.
     var value: String
+    /// Human name fetched from Unsplash. Collections are identified by a
+    /// numeric ID, which tells the user nothing on its own.
+    var title: String?
+
+    /// What the user reads: `c/Wallpapers`, `t/nature`, `s/misty forest`.
+    var shortLabel: String {
+        "\(kind.prefix)/\(title ?? value)"
+    }
 
     var displayName: String {
-        "\(kind.displayName): \(value)"
+        "\(kind.displayName): \(title ?? value)"
+    }
+
+    /// Only a collection is unreadable without a lookup; a slug and a query
+    /// already say what they are.
+    var needsTitle: Bool {
+        kind == .collection && title == nil
     }
 
     /// The page this source came from, for the "open in Unsplash" menu item.

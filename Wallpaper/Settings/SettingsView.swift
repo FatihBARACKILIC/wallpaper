@@ -73,7 +73,7 @@ private struct SourcesSettings: View {
 
     var body: some View {
         VStack(alignment: .leading) {
-            SourceEditor(settings: manager.settings)
+            SourceEditor(settings: manager.settings, client: manager.client)
         }
         .padding(20)
     }
@@ -143,8 +143,13 @@ private struct StorageSettings: View {
                         .foregroundStyle(.secondary)
                 }
 
-                Button("Delete photos…") { isConfirmingClear = true }
-                    .disabled(manager.cache.stats.count == 0)
+                HStack {
+                    Button("Show in Finder") {
+                        NSWorkspace.shared.open(manager.cache.folder)
+                    }
+                    Button("Delete photos…") { isConfirmingClear = true }
+                        .disabled(manager.cache.stats.count == 0)
+                }
             } footer: {
                 Text("Photos are kept in Application Support and named so you can find them on Unsplash again. The wallpapers currently on screen are never deleted.")
             }

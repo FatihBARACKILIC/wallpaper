@@ -36,7 +36,7 @@ struct OnboardingView: View {
                 Group {
                     switch step {
                     case .key: keyStep
-                    case .sources: SourceEditor(settings: manager.settings)
+                    case .sources: SourceEditor(settings: manager.settings, client: manager.client)
                     case .schedule: scheduleStep
                     }
                 }

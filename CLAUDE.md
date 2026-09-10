@@ -27,6 +27,7 @@ xcodebuild -project Wallpaper.xcodeproj -scheme Wallpaper -configuration Debug b
 - Attribution is "Photo by <name> on Unsplash", where both the photographer and Unsplash are links. Every outbound Unsplash URL must carry `utm_source` (the user's registered application name) and `utm_medium=referral` — build them with `UnsplashAttribution.link`, never by hand.
 - Read `X-Ratelimit-Limit` / `X-Ratelimit-Remaining` from every response and persist them with a timestamp — the gauge must never cost a request to refresh.
 - `/photos/random` filters topics by ID, not slug. `UnsplashClient` resolves a slug once via `/topics/<slug>` and caches the ID in UserDefaults.
+- A collection is identified by a numeric ID, which means nothing to the user. `SourceEditor` resolves the title via `/collections/<id>` when the source is added and stores it on the `Source`, so the lookup happens once.
 
 ## Secrets
 
