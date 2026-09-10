@@ -28,7 +28,9 @@ xcodebuild -project Wallpaper.xcodeproj -scheme Wallpaper -configuration Debug b
 
 ## Secrets
 
-The user's Access Key lives in the Keychain (`kSecUseDataProtectionKeychain`, `kSecAttrAccessibleWhenUnlocked`). Never log it, never write it to UserDefaults, always mask it in the UI.
+The user's Access Key lives in the **login keychain**. Do not switch to the data-protection keychain (`kSecUseDataProtectionKeychain`): it returns `errSecMissingEntitlement` without `keychain-access-groups`, and adding that entitlement forces a provisioning profile onto every build and onto the notarized DMG. The login keychain is encrypted at rest and binds the item to the app's code signature, which is the protection this app needs.
+
+Never log the key, never write it to UserDefaults, always mask it in the UI.
 
 ## Layout
 

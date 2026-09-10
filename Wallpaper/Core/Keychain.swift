@@ -1,9 +1,16 @@
 import Foundation
 import Security
 
-/// Stores the user's Unsplash Access Key in the data-protection keychain.
-/// The value is never logged, never written to UserDefaults, and only
-/// readable while the Mac is unlocked.
+/// Stores the user's Unsplash Access Key in the login keychain.
+///
+/// Not the data-protection keychain: that one requires a
+/// `keychain-access-groups` entitlement, which in turn forces a provisioning
+/// profile onto every build and onto the notarized DMG. The login keychain
+/// needs no entitlement, is encrypted at rest, is unlocked with the user's
+/// login, and binds the item to this app's code signature — which is the
+/// protection that matters here.
+///
+/// The value is never logged and never written to UserDefaults.
 enum Keychain {
     private static let service = "com.barackilic.Wallpaper"
     private static let account = "unsplash-access-key"
@@ -25,7 +32,6 @@ enum Keychain {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
-            kSecUseDataProtectionKeychain as String: true,
         ]
     }
 
@@ -34,7 +40,7 @@ enum Keychain {
 
         var attributes = baseQuery
         attributes[kSecValueData as String] = data
-        attributes[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlocked
+        attributes[kSecAttrDescription as String] = "Unsplash Access Key"
 
         let status = SecItemAdd(attributes as CFDictionary, nil)
         switch status {
