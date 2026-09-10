@@ -50,7 +50,11 @@ Wallpaper/
 ├─ Shared/                views used by both setup and settings
 └─ Core/                  Keychain, Settings, Source, UnsplashClient, ImageCache,
                           WallpaperSetter, Scheduler, WallpaperManager, LoginItem
+Tools/MakeAppIcon.swift  draws the app icon, run by hand:
+                         `swift Tools/MakeAppIcon.swift Wallpaper/Assets.xcassets/AppIcon.appiconset`
 ```
+
+- `Tools/` sits outside `Wallpaper/` on purpose. `Wallpaper/` is a synchronized group, so anything dropped in it is compiled into the app — a build script placed there would break the build.
 
 - **Rotation is started in exactly two places:** `AppDelegate.applicationDidFinishLaunching` for a configured user, and the last step of onboarding. `WallpaperManager.shared` is the single instance both reach.
 
