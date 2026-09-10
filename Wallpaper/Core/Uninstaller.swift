@@ -115,9 +115,13 @@ enum Uninstaller {
             }
         }
 
-        if trashingApp {
+        // Nothing to move when the bundle is already gone — a second run, or an
+        // app launched from a path that has since been deleted. That is the
+        // desired end state, not a failure to report.
+        let bundleURL = Bundle.main.bundleURL
+        if trashingApp, FileManager.default.fileExists(atPath: bundleURL.path) {
             do {
-                try FileManager.default.trashItem(at: Bundle.main.bundleURL, resultingItemURL: nil)
+                try FileManager.default.trashItem(at: bundleURL, resultingItemURL: nil)
             } catch {
                 report.appTrashError = error.localizedDescription
                 Log.wallpaper.error("uninstall: app bundle: \(error.localizedDescription, privacy: .public)")
@@ -132,10 +136,19 @@ enum Uninstaller {
     /// an uninstall — the deferred delete is timed against this process, so it
     /// has to be scheduled as the app goes, not minutes earlier while the user
     /// is still reading a failure report.
+    ///
+    /// `exit` rather than `NSApp.terminate`, for two reasons. The polite call is
+    /// swallowed when it comes from inside a sheet's own action: AppKit holds
+    /// the quit until the modal session ends, and that session does not end
+    /// until the action returns — leaving the app running with its own bundle
+    /// already in the Trash. And an orderly shutdown writes window state back
+    /// into the preferences domain that was just emptied. Neither matters here:
+    /// everything this app owns has already been deleted, so there is nothing
+    /// left worth saving on the way out.
     @MainActor
-    static func quit() {
+    static func quit() -> Never {
         removeAfterExit([preferencesURL])
-        NSApp.terminate(nil)
+        exit(EXIT_SUCCESS)
     }
 
     /// cfprefsd owns the preferences file, not this app: when the process ends
