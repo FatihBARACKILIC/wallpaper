@@ -29,11 +29,11 @@ struct Source: Codable, Identifiable, Hashable {
     /// The page this source came from, for the "open in Unsplash" menu item.
     var webURL: URL? {
         switch kind {
-        case .topic: URL(string: "https://unsplash.com/t/\(value)")
-        case .collection: URL(string: "https://unsplash.com/collections/\(value)")
+        case .topic: UnsplashAttribution.link("https://unsplash.com/t/\(value)")
+        case .collection: UnsplashAttribution.link("https://unsplash.com/collections/\(value)")
         case .search:
             value.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
-                .flatMap { URL(string: "https://unsplash.com/s/photos/\($0)") }
+                .flatMap { UnsplashAttribution.link("https://unsplash.com/s/photos/\($0)") }
         }
     }
 }

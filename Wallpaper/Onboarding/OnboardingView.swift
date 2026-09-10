@@ -66,6 +66,8 @@ struct OnboardingView: View {
 
             AccessKeyField(key: $key) {}
 
+            ApplicationNameField(settings: manager.settings)
+
             Divider()
 
             Text("Don't have a key yet?")
@@ -176,6 +178,29 @@ struct MonitorModePicker: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+        }
+    }
+}
+
+
+/// The name the user registered their application under on Unsplash. It is sent
+/// as `utm_source` on every attribution link, which the API guidelines require
+/// to match the registered application.
+struct ApplicationNameField: View {
+    @Bindable var settings: SettingsStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            TextField("Application name on Unsplash", text: Binding(
+                get: { settings.settings.applicationName },
+                set: { new in settings.update { $0.applicationName = new } }
+            ))
+            .textFieldStyle(.roundedBorder)
+
+            Text("Whatever you named the application when you created the key. Unsplash expects it on the attribution links.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }

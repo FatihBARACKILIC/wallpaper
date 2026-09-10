@@ -41,13 +41,22 @@ struct MenuContent: View {
     private var currentPhoto: some View {
         if let photo = manager.currentPhotos.first {
             VStack(alignment: .leading, spacing: 2) {
-                // Attribution is required by the Unsplash API guidelines.
-                Link(destination: URL(string: photo.user.links.html)!) {
-                    Text("Photo by \(photo.user.name)")
-                        .font(.callout.weight(.medium))
+                // "Photo by <name> on Unsplash", both links carrying UTM
+                // parameters — the attribution the API guidelines require.
+                HStack(spacing: 0) {
+                    Text("Photo by ")
+                    if let photographerURL = photo.photographerURL {
+                        Link(photo.user.name, destination: photographerURL)
+                    } else {
+                        Text(photo.user.name)
+                    }
+                    Text(" on ")
+                    Link("Unsplash", destination: UnsplashAttribution.homeURL)
                 }
+                .font(.callout)
+
                 if let webURL = photo.webURL {
-                    Link("View on Unsplash", destination: webURL)
+                    Link("View this photo", destination: webURL)
                         .font(.caption)
                 }
             }

@@ -100,7 +100,7 @@ final class ImageCache {
     /// Writes the Unsplash page URL into the file's "Where from" metadata, so
     /// the source survives even if the file is renamed.
     private func setWhereFrom(_ photo: Photo, on url: URL) {
-        let sources = [photo.links.html, photo.user.links.html]
+        let sources = [photo.webURL, photo.photographerURL].compactMap { $0?.absoluteString }
         guard let plist = try? PropertyListSerialization.data(
             fromPropertyList: sources, format: .binary, options: 0
         ) else { return }

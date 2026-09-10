@@ -41,7 +41,10 @@ struct Photo: Codable, Hashable, Identifiable, Sendable {
         case altDescription = "alt_description"
     }
 
-    var webURL: URL? { URL(string: "https://unsplash.com/photos/\(id)") }
+    /// Attribution links must carry UTM parameters — see `UnsplashAttribution`.
+    var webURL: URL? { UnsplashAttribution.link(links.html) }
+
+    var photographerURL: URL? { UnsplashAttribution.link(user.links.html) }
 
     /// Short human description used in the cached filename, e.g. "misty mountain lake".
     var caption: String? {

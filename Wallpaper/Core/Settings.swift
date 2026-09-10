@@ -70,6 +70,9 @@ struct StorageLimit: Codable, Hashable {
 
 struct AppSettings: Codable, Hashable {
     var sources: [Source] = []
+    /// The name this user registered their application under on Unsplash.
+    /// Used as `utm_source` in attribution links, as the guidelines require.
+    var applicationName = UnsplashAttribution.defaultApplicationName
     var interval: ChangeInterval = .seconds(60 * 60)
     var monitorMode: MonitorMode = .sameOnAllScreens
     var storageLimit = StorageLimit()
@@ -102,12 +105,15 @@ final class SettingsStore {
         } else {
             settings = AppSettings()
         }
+
+        UnsplashAttribution.applicationName = settings.applicationName
     }
 
     func update(_ mutate: (inout AppSettings) -> Void) {
         var copy = settings
         mutate(&copy)
         settings = copy
+        UnsplashAttribution.applicationName = copy.applicationName
     }
 
     private func persist() {

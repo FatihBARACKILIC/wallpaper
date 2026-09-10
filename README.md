@@ -15,6 +15,7 @@ Built to stay out of the way: no Dock icon, no windows unless you open them, and
 - **Rate limit gauge** — see how much of your hourly Unsplash quota is left
 - **Storage limits** — cap the photo cache by count and size, or turn the cap off entirely
 - **Findable filenames** — every photo is saved with the photographer, a description and its Unsplash ID
+- **Proper attribution** — the photographer is credited and linked in the menu bar, as Unsplash requires
 
 ## Requirements
 
@@ -27,6 +28,8 @@ Built to stay out of the way: no Dock icon, no windows unless you open them, and
 2. Go to [unsplash.com/oauth/applications](https://unsplash.com/oauth/applications) and click **New Application**
 3. Accept the API terms and give your application a name
 4. Copy the **Access Key** (the Secret Key is not needed)
+
+Enter the name you gave the application during setup as well — Unsplash expects attribution links to identify the application that referred the visit.
 
 New applications start in Demo mode with 50 requests per hour, which is plenty — a wallpaper change costs about 2 requests.
 
@@ -46,7 +49,7 @@ By default the cache is capped at 100 photos or 1 GB, whichever comes first, evi
 
 ## Attribution
 
-Photos are provided by Unsplash. The app displays the photographer's name and links back to the photo, and reports downloads to the Unsplash API as required by the [API guidelines](https://help.unsplash.com/en/articles/2511245-unsplash-api-guidelines).
+Photos are provided by Unsplash. As the [API guidelines](https://help.unsplash.com/en/articles/2511245-unsplash-api-guidelines) require, the app credits the photographer and links to both their profile and Unsplash with the expected `utm_source` and `utm_medium` parameters, and reports each photo it uses to the download endpoint.
 
 ## License
 

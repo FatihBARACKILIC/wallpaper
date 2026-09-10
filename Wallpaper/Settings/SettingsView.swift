@@ -107,6 +107,8 @@ private struct AccountSettings: View {
                     AccessKeyField(key: $key) { isEditing = false }
                 }
 
+                ApplicationNameField(settings: manager.settings)
+
                 RateLimitGauge(rateLimit: manager.client.rateLimit)
 
                 Divider()
