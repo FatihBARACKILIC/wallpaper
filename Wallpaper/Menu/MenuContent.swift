@@ -20,6 +20,14 @@ struct MenuContent: View {
                 setupPrompt
             }
 
+            if let notice = manager.notice {
+                Divider()
+                Label(notice, systemImage: "clock.arrow.circlepath")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             if let message = manager.status.errorMessage {
                 Divider()
                 Label(message, systemImage: isOffline ? "wifi.slash" : "exclamationmark.triangle.fill")

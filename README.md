@@ -15,6 +15,7 @@ Built to stay out of the way: no Dock icon, no windows unless you open them, and
 - **Skip button** — don't like the current photo? Change it instantly
 - **Cross-fade** — wallpapers fade into each other instead of snapping; switchable off
 - **Survives interruptions** — a change missed while asleep, offline or shut down happens as soon as it can
+- **Keeps going when Unsplash doesn't** — out of quota or offline, it rotates through photos you already have
 - **Rate limit gauge** — see how much of your hourly Unsplash quota is left
 - **Storage limits** — cap the photo cache by count and size, or turn the cap off entirely
 - **Findable filenames** — every photo is saved with the photographer, a description and its Unsplash ID

@@ -25,6 +25,11 @@ final class WallpaperManager {
     private(set) var status: Status = .idle
     private(set) var lastChangeDate: Date?
 
+    /// Set when the wallpaper did change, but from the cache rather than from
+    /// Unsplash. Not an error — the desktop kept moving — so it is shown apart
+    /// from `status`.
+    private(set) var notice: String?
+
     /// A photo and the local file it was applied from.
     struct Applied: Codable, Hashable {
         var photo: Photo
@@ -157,6 +162,7 @@ final class WallpaperManager {
             Log.wallpaper.info("wallpaper changed: \(batch.count, privacy: .public) photo(s)")
             lastChangeDate = Date()
             status = .idle
+            notice = nil
             consecutiveFailures = 0
             stopNetworkMonitor()
 
@@ -168,7 +174,7 @@ final class WallpaperManager {
             housekeep()
             prefetchNext()
         } catch {
-            handleFailure(error)
+            await handleFailure(error)
         }
     }
 
@@ -215,23 +221,84 @@ final class WallpaperManager {
         case retry(after: TimeInterval)
         case waitForNetwork
         case userMustAct
+
+        /// Only worth reaching for the cache when Unsplash is unreachable, not
+        /// when the key or the sources are wrong.
+        var allowsCacheFallback: Bool {
+            switch self {
+            case .retry, .waitForNetwork: true
+            case .userMustAct: false
+            }
+        }
     }
 
-    private func handleFailure(_ error: any Error) {
+    private func handleFailure(_ error: any Error) async {
         consecutiveFailures += 1
+        let recovery = recovery(for: error)
 
-        switch recovery(for: error) {
+        // Unsplash is out of reach, but the disk is not: keep rotating through
+        // photos already downloaded rather than freezing on one wallpaper.
+        let usedCache = recovery.allowsCacheFallback ? await applyFromCache() : false
+
+        switch recovery {
         case .userMustAct:
             status = .failed(error.localizedDescription)
+            notice = nil
 
         case .waitForNetwork:
-            status = .waitingForNetwork("Offline — will retry when the network is back.")
+            status = usedCache ? .idle : .waitingForNetwork("Offline — will retry when the network is back.")
+            notice = usedCache ? "Offline — showing a photo you already have." : nil
             startNetworkMonitor()
 
         case .retry(let delay):
-            status = .failed(error.localizedDescription)
+            status = usedCache ? .idle : .failed(error.localizedDescription)
+            notice = usedCache ? cacheNotice(for: error) : nil
             scheduleRetry(after: delay)
         }
+    }
+
+    private func cacheNotice(for error: any Error) -> String {
+        guard case .rateLimited(let resetsAt) = error as? UnsplashError else {
+            return "Couldn't reach Unsplash — showing a photo you already have."
+        }
+
+        guard let resetsAt else {
+            return "Unsplash hourly limit reached — showing a photo you already have."
+        }
+        let time = resetsAt.formatted(date: .omitted, time: .shortened)
+        return "Unsplash hourly limit reached — showing a photo you already have. New ones at \(time)."
+    }
+
+    /// Picks photos already on disk, avoiding the ones on screen so the
+    /// wallpaper visibly changes. Returns false when there is nothing to fall
+    /// back to, which leaves the current wallpaper alone.
+    private func applyFromCache() async -> Bool {
+        let inUse = Set(current.map(\.url.standardizedFileURL))
+        let candidates = cache.entries().filter { !inUse.contains($0.url.standardizedFileURL) }
+        guard !candidates.isEmpty else {
+            Log.wallpaper.debug("no cached photo to fall back to")
+            return false
+        }
+
+        var chosen = Array(candidates.shuffled().prefix(neededPhotoCount))
+        // Fewer cached photos than screens: repeat rather than give up.
+        while chosen.count < neededPhotoCount, let first = chosen.first {
+            chosen.append(first)
+        }
+
+        do {
+            try await applyWithTransition(chosen.map(\.url))
+        } catch {
+            Log.wallpaper.error("cache fallback failed: \(error.localizedDescription, privacy: .public)")
+            return false
+        }
+
+        current = chosen.map { Applied(photo: $0.photo, url: $0.url) }
+        lastChangeDate = Date()
+        // No download is reported: nothing was downloaded, and the photo was
+        // already reported the first time it was used.
+        Log.wallpaper.info("fell back to \(chosen.count, privacy: .public) cached photo(s)")
+        return true
     }
 
     private func recovery(for error: any Error) -> Recovery {
@@ -284,6 +351,7 @@ final class WallpaperManager {
         retryTask?.cancel()
         retryTask = nil
         consecutiveFailures = 0
+        notice = nil
         stopNetworkMonitor()
     }
 

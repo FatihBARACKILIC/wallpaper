@@ -23,6 +23,14 @@ final class ImageCache {
     /// Where the photos live, for the "Show in Finder" button.
     var folder: URL { directory }
 
+    /// Which photo each cached file is, so a file can be re-used later with
+    /// proper attribution. Kept beside the photo folder rather than inside it,
+    /// so it is never counted towards the storage limit or evicted.
+    private var index: [String: Photo] = [:]
+    private var indexURL: URL {
+        directory.deletingLastPathComponent().appending(path: "photo-index.json")
+    }
+
     private let directory: URL
     private let session: URLSession
     private let fileManager = FileManager.default
@@ -34,7 +42,41 @@ final class ImageCache {
             .appending(path: "Wallpaper/Photos", directoryHint: .isDirectory)
 
         try? fileManager.createDirectory(at: self.directory, withIntermediateDirectories: true)
+        loadIndex()
         refreshStats()
+    }
+
+    // MARK: - Index
+
+    private func loadIndex() {
+        guard let data = try? Data(contentsOf: indexURL),
+              let decoded = try? JSONDecoder().decode([String: Photo].self, from: data)
+        else { return }
+        index = decoded
+    }
+
+    private func saveIndex() {
+        guard let data = try? JSONEncoder().encode(index) else { return }
+        try? data.write(to: indexURL, options: .atomic)
+    }
+
+    /// Everything on disk we still know the provenance of. Used to keep
+    /// rotating when Unsplash is out of reach.
+    func entries() -> [(photo: Photo, url: URL)] {
+        index.compactMap { filename, photo in
+            let url = directory.appending(path: filename)
+            guard fileManager.fileExists(atPath: url.path) else { return nil }
+            return (photo, url)
+        }
+    }
+
+    /// Forgets index entries whose file is gone, so the index cannot outgrow
+    /// the folder it describes.
+    private func pruneIndex() {
+        let existing = Set(contents().map(\.url.lastPathComponent))
+        let before = index.count
+        index = index.filter { existing.contains($0.key) }
+        if index.count != before { saveIndex() }
     }
 
     // MARK: - Downloading
@@ -43,7 +85,13 @@ final class ImageCache {
     /// Re-uses an existing file when the same photo is already cached.
     func download(_ photo: Photo, pixelSize: CGSize) async throws -> URL {
         let destination = directory.appending(path: filename(for: photo))
-        if fileManager.fileExists(atPath: destination.path) { return destination }
+        if fileManager.fileExists(atPath: destination.path) {
+            if index[destination.lastPathComponent] == nil {
+                index[destination.lastPathComponent] = photo
+                saveIndex()
+            }
+            return destination
+        }
 
         guard let remote = photo.downloadURL(
             pixelWidth: Int(pixelSize.width),
@@ -64,6 +112,9 @@ final class ImageCache {
         try? fileManager.removeItem(at: destination)
         try fileManager.moveItem(at: temporary, to: destination)
         setWhereFrom(photo, on: destination)
+
+        index[destination.lastPathComponent] = photo
+        saveIndex()
         refreshStats()
 
         return destination
@@ -127,6 +178,7 @@ final class ImageCache {
     /// photo, which would break the desktop or waste the prefetch.
     func enforce(_ limit: StorageLimit, pinned: Set<URL>) {
         guard limit.isEnabled else {
+            pruneIndex()
             refreshStats()
             return
         }
@@ -144,6 +196,7 @@ final class ImageCache {
             bytes -= file.size
         }
 
+        pruneIndex()
         refreshStats()
     }
 
@@ -153,6 +206,7 @@ final class ImageCache {
         for file in contents() where !pinnedPaths.contains(file.url.standardizedFileURL.path) {
             try? fileManager.removeItem(at: file.url)
         }
+        pruneIndex()
         refreshStats()
     }
 
