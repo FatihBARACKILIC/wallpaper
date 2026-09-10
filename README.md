@@ -9,7 +9,7 @@ Built to stay out of the way: no Dock icon, no windows unless you open them, and
 - **Menu bar only** — runs in the background, no Dock icon
 - **Your own Unsplash API key** — stored encrypted in the macOS Keychain
 - **Multiple sources** — mix topics, collections and search queries; each change picks one at random, listed as `t/`, `c/` and `s/` with a link to each
-- **Flexible schedule** — 5 minutes to 1 week, a custom interval, or manual only
+- **Flexible schedule** — nine intervals from 5 minutes to 1 week, or manual only
 - **Multi-monitor** — same photo on every screen, or a different photo per screen
 - **Every desktop** — Spaces you aren't looking at are updated as soon as you switch to them
 - **Skip button** — don't like the current photo? Change it instantly
@@ -21,6 +21,7 @@ Built to stay out of the way: no Dock icon, no windows unless you open them, and
 - **Storage limits** — cap the photo cache by count and size, or turn the cap off entirely
 - **Findable filenames** — every photo is saved with the photographer, a description and its Unsplash ID
 - **Proper attribution** — the photographer is credited and linked in the menu bar, as Unsplash requires
+- **Opens at login** — optional, off by default
 
 ## Requirements
 
@@ -55,6 +56,13 @@ By default the cache is capped at 100 photos or 1 GB, whichever comes first, evi
 ## Attribution
 
 Photos are provided by Unsplash. As the [API guidelines](https://help.unsplash.com/en/articles/2511245-unsplash-api-guidelines) require, the app credits the photographer and links to both their profile and Unsplash with the expected `utm_source` and `utm_medium` parameters, and reports each photo it uses to the download endpoint.
+
+## Building from source
+
+```
+xcodebuild -project Wallpaper.xcodeproj -scheme Wallpaper -configuration Release build
+xcodebuild test -project Wallpaper.xcodeproj -scheme Wallpaper -destination 'platform=macOS'
+```
 
 ## License
 

@@ -28,7 +28,7 @@ xcodebuild test -project Wallpaper.xcodeproj -scheme Wallpaper -destination 'pla
 
 ## Unsplash API rules (not optional)
 
-- Hitting `photo.links.download_location` after using a photo is required by the API guidelines. It counts against the rate limit; the image bytes from the CDN do not.
+- Hitting `photo.links.download_location` after using a photo is required by the API guidelines. It counts against the rate limit; the image bytes from the CDN do not. Verified against the live API: it answers `200` with a `{"url": …}` body and drops `X-Ratelimit-Remaining` by one.
 - Attribution is "Photo by <name> on Unsplash", where both the photographer and Unsplash are links. Every outbound Unsplash URL must carry `utm_source` (the user's registered application name) and `utm_medium=referral` — build them with `UnsplashAttribution.link`, never by hand.
 - Read `X-Ratelimit-Limit` / `X-Ratelimit-Remaining` from every response and persist them with a timestamp — the gauge must never cost a request to refresh.
 - `/photos/random` filters topics by ID, not slug. `UnsplashClient` resolves a slug once via `/topics/<slug>` and caches the ID in UserDefaults.
@@ -44,16 +44,19 @@ Never log the key, never write it to UserDefaults, always mask it in the UI.
 
 ```
 Wallpaper/
-├─ WallpaperApp.swift     scenes + AppDelegate (launch and wake hooks)
-├─ Menu/                  menu bar panel
-├─ Onboarding/            first-run setup, plus the interval/monitor pickers
-├─ Settings/              tabbed settings window
-├─ Shared/                views used by both setup and settings
-└─ Core/                  Keychain, Settings, Source, UnsplashClient, ImageCache,
-                          WallpaperSetter, Scheduler, WallpaperManager, LoginItem
-WallpaperTests/          unit tests for the pure logic
-Tools/MakeAppIcon.swift  draws the app icon, run by hand:
-                         `swift Tools/MakeAppIcon.swift Wallpaper/Assets.xcassets/AppIcon.appiconset`
+├─ WallpaperApp.swift    scenes + AppDelegate (launch and wake hooks)
+├─ Menu/                 menu bar panel
+├─ Onboarding/           first-run setup, plus the interval/monitor pickers
+├─ Settings/             tabbed settings window
+├─ Shared/               views used by both setup and settings
+├─ Assets.xcassets/      AppIcon, generated — see Tools below
+└─ Core/                 Keychain, Settings, Source, UnsplashAttribution,
+                         UnsplashClient, ImageCache, WallpaperSetter,
+                         WallpaperFade, Scheduler, WallpaperManager,
+                         LoginItem, Log
+WallpaperTests/         unit tests for the pure logic
+Tools/MakeAppIcon.swift draws the app icon:
+                        `swift Tools/MakeAppIcon.swift Wallpaper/Assets.xcassets/AppIcon.appiconset`
 ```
 
 - `Tools/` sits outside `Wallpaper/` on purpose. `Wallpaper/` is a synchronized group, so anything dropped in it is compiled into the app — a build script placed there would break the build.
