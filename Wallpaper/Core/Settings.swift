@@ -40,14 +40,28 @@ enum ChangeInterval: Codable, Hashable {
     /// Roughly how many API requests this interval costs per hour, used to warn
     /// the user before they outrun a 50/hour demo key.
     ///
-    /// One change is one `/photos/random` call — `count` fetches every photo at
-    /// once — plus one download report per photo, which the API guidelines
-    /// require and which counts against the limit. The image bytes come from
-    /// the CDN and do not count.
-    func estimatedRequestsPerHour(photosPerChange: Int) -> Int {
-        guard let duration, duration > 0 else { return 0 }
+    /// `costPerChange` comes from `Artwork.Provider.requestCost`.
+    func estimatedRequestsPerHour(costPerChange: Int) -> Int {
+        guard let duration, duration > 0, costPerChange > 0 else { return 0 }
         let changesPerHour = 3600.0 / duration
-        return Int((changesPerHour * Double(1 + max(1, photosPerChange))).rounded(.up))
+        return Int((changesPerHour * Double(costPerChange)).rounded(.up))
+    }
+}
+
+extension Artwork.Provider {
+    /// What one wallpaper change costs this provider in API requests.
+    ///
+    /// Unsplash is `1 + N`: a single `/photos/random` call fetches the whole
+    /// batch, and then each photo needs the download report the API guidelines
+    /// require. APOD is flat 1 — it also returns the whole batch at once, and
+    /// has nothing to report afterwards. A folder on this Mac costs nothing;
+    /// the image bytes never count for any of them.
+    func requestCost(photosPerChange: Int) -> Int {
+        switch self {
+        case .unsplash: 1 + max(1, photosPerChange)
+        case .apod: 1
+        case .local: 0
+        }
     }
 }
 
@@ -131,20 +145,25 @@ final class SettingsStore {
         }
     }
 
-    /// Whether a key is in the keychain.
+    /// Whether the Unsplash Access Key is in the keychain.
     ///
     /// Mirrored here rather than read straight from the keychain each time,
-    /// because `Keychain.read()` is not observable: a Continue button that asks
+    /// because the keychain is not observable: a Continue button that asks
     /// the keychain directly is never told the key has arrived, and stays
     /// disabled until the view is built again. Every write goes through this
     /// type so the mirror cannot drift.
     private(set) var hasAccessKey: Bool
 
+    /// Whether the NASA API key is in the keychain. Mirrored for the same
+    /// reason as `hasAccessKey`.
+    private(set) var hasNASAKey: Bool
+
     private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        self.hasAccessKey = Keychain.read()?.isEmpty == false
+        self.hasAccessKey = Keychain.unsplashAccessKey.read()?.isEmpty == false
+        self.hasNASAKey = Keychain.nasaAPIKey.read()?.isEmpty == false
 
         if let data = defaults.data(forKey: Self.defaultsKey),
            let decoded = try? JSONDecoder().decode(AppSettings.self, from: data) {
@@ -168,19 +187,51 @@ final class SettingsStore {
         defaults.set(data, forKey: Self.defaultsKey)
     }
 
-    // MARK: - Access key
+    // MARK: - Keys
 
     var accessKey: String? {
-        Keychain.read()
+        Keychain.unsplashAccessKey.read()
     }
 
     func setAccessKey(_ key: String) throws {
-        try Keychain.save(key.trimmingCharacters(in: .whitespacesAndNewlines))
+        try Keychain.unsplashAccessKey.save(key.trimmingCharacters(in: .whitespacesAndNewlines))
         hasAccessKey = true
     }
 
     func clearAccessKey() {
-        Keychain.delete()
+        Keychain.unsplashAccessKey.delete()
         hasAccessKey = false
+    }
+
+    var nasaKey: String? {
+        Keychain.nasaAPIKey.read()
+    }
+
+    func setNASAKey(_ key: String) throws {
+        try Keychain.nasaAPIKey.save(key.trimmingCharacters(in: .whitespacesAndNewlines))
+        hasNASAKey = true
+    }
+
+    func clearNASAKey() {
+        Keychain.nasaAPIKey.delete()
+        hasNASAKey = false
+    }
+
+    /// Whether `source` can actually be used right now.
+    ///
+    /// A folder always can — it needs no key and no network. The two API
+    /// sources need their own key, which is why the app no longer insists on an
+    /// Unsplash key before it will start: a folder-only setup is a complete one.
+    func canUse(_ source: Source) -> Bool {
+        switch source.kind.provider {
+        case .unsplash: hasAccessKey
+        case .apod: hasNASAKey
+        case .local: true
+        }
+    }
+
+    /// The sources that can be drawn from right now.
+    var usableSources: [Source] {
+        settings.sources.filter(canUse)
     }
 }

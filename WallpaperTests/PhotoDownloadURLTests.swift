@@ -18,7 +18,7 @@ struct PhotoDownloadURLTests {
 
     @Test("A pixel size crops at the CDN")
     func sizedDownload() {
-        let items = parameters(makePhoto().downloadURL(pixelSize: CGSize(width: 3840, height: 2160)))
+        let items = parameters(makeArtwork().downloadURL(pixelSize: CGSize(width: 3840, height: 2160)))
         #expect(items["w"] == "3840")
         #expect(items["h"] == "2160")
         #expect(items["fit"] == "crop")
@@ -31,7 +31,7 @@ struct PhotoDownloadURLTests {
     func originalStillTranscodes() {
         // The raw file can be a 50 MB uncompressed image, so `fm=jpg` matters
         // even when the dimensions are left alone.
-        let items = parameters(makePhoto().downloadURL(pixelSize: nil))
+        let items = parameters(makeArtwork().downloadURL(pixelSize: nil))
         #expect(items["w"] == nil)
         #expect(items["h"] == nil)
         #expect(items["q"] == "85")
@@ -40,7 +40,7 @@ struct PhotoDownloadURLTests {
 
     @Test("Sizing parameters already on the raw URL are replaced, not added to")
     func replacesExistingParameters() {
-        let photo = makePhoto(raw: "https://images.unsplash.com/photo-1?ixid=abc&w=9999&h=9999&q=20&dpr=3")
+        let photo = makeArtwork(raw: "https://images.unsplash.com/photo-1?ixid=abc&w=9999&h=9999&q=20&dpr=3")
         guard let url = photo.downloadURL(pixelSize: CGSize(width: 1920, height: 1080)),
               let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         else {
@@ -58,6 +58,6 @@ struct PhotoDownloadURLTests {
 
     @Test("The photo's own identifiers survive into the CDN URL")
     func keepsPath() {
-        #expect(makePhoto().downloadURL(pixelSize: nil)?.path == "/photo-1")
+        #expect(makeArtwork().downloadURL(pixelSize: nil)?.path == "/photo-1")
     }
 }

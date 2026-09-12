@@ -1,12 +1,30 @@
 import AppKit
 import Foundation
 
+enum CacheError: LocalizedError {
+    /// A photo that lives in one of the user's own folders was handed to the
+    /// cache. Nothing should ever copy those.
+    case notDownloadable
+    case badResponse(Int)
+
+    var errorDescription: String? {
+        switch self {
+        case .notDownloadable: "That photo has nothing to download."
+        case .badResponse(let code): "Downloading the photo failed (HTTP \(code))."
+        }
+    }
+}
+
 /// Downloads photos to Application Support and keeps the folder within the
 /// user's storage limit.
 ///
-/// Filenames are built so a photo can be traced back to Unsplash by eye:
+/// Filenames are built so a photo can be traced back to its source by eye:
 ///   `2026-09-10 — Ales Krivec — misty-mountain-lake — Ry9WBo3qmoc.jpg`
-/// The trailing component is the photo ID, so `unsplash.com/photos/<id>` works.
+/// The trailing component is the photo's ID, so `unsplash.com/photos/<id>` works.
+///
+/// Only downloaded photos live here. A photo from one of the user's own folders
+/// is never copied in — it is used where it lies, so nothing in this type can
+/// ever rename or delete it.
 @Observable
 final class ImageCache {
     struct Stats: Equatable {
@@ -26,7 +44,7 @@ final class ImageCache {
     /// Which photo each cached file is, so a file can be re-used later with
     /// proper attribution. Kept beside the photo folder rather than inside it,
     /// so it is never counted towards the storage limit or evicted.
-    private var index: [String: Photo] = [:]
+    private var index: [String: Artwork] = [:]
     private var indexURL: URL {
         directory.deletingLastPathComponent().appending(path: "photo-index.json")
     }
@@ -50,7 +68,7 @@ final class ImageCache {
 
     private func loadIndex() {
         guard let data = try? Data(contentsOf: indexURL),
-              let decoded = try? JSONDecoder().decode([String: Photo].self, from: data)
+              let decoded = try? JSONDecoder().decode([String: Artwork].self, from: data)
         else { return }
         index = decoded
     }
@@ -61,12 +79,12 @@ final class ImageCache {
     }
 
     /// Everything on disk we still know the provenance of. Used to keep
-    /// rotating when Unsplash is out of reach.
-    func entries() -> [(photo: Photo, url: URL)] {
-        index.compactMap { filename, photo in
+    /// rotating when the network is out of reach.
+    func entries() -> [(artwork: Artwork, url: URL)] {
+        index.compactMap { filename, artwork in
             let url = directory.appending(path: filename)
             guard fileManager.fileExists(atPath: url.path) else { return nil }
-            return (photo, url)
+            return (artwork, url)
         }
     }
 
@@ -81,37 +99,42 @@ final class ImageCache {
 
     // MARK: - Downloading
 
-    /// Downloads `photo` sized for `pixelSize` — or at its own size when that
+    /// Downloads `artwork` sized for `pixelSize` — or at its own size when that
     /// is `nil` — and returns the local file. Re-uses an existing file when the
     /// same photo is already cached.
-    func download(_ photo: Photo, pixelSize: CGSize?) async throws -> URL {
-        let destination = directory.appending(path: filename(for: photo))
+    ///
+    /// A photo that is already a file on this Mac never reaches here; the
+    /// manager applies those in place.
+    func download(_ artwork: Artwork, pixelSize: CGSize?) async throws -> URL {
+        guard !artwork.origin.isLocalFile else { throw CacheError.notDownloadable }
+
+        let destination = directory.appending(path: filename(for: artwork))
         if fileManager.fileExists(atPath: destination.path) {
             if index[destination.lastPathComponent] == nil {
-                index[destination.lastPathComponent] = photo
+                index[destination.lastPathComponent] = artwork
                 saveIndex()
             }
             return destination
         }
 
-        guard let remote = photo.downloadURL(pixelSize: pixelSize) else {
-            throw UnsplashError.unexpectedStatus(-1)
+        guard let remote = artwork.downloadURL(pixelSize: pixelSize) else {
+            throw CacheError.notDownloadable
         }
 
         let (temporary, response) = try await session.download(from: remote)
         defer { try? fileManager.removeItem(at: temporary) }
 
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            throw UnsplashError.unexpectedStatus(http.statusCode)
+            throw CacheError.badResponse(http.statusCode)
         }
 
         // A partially written file must never become a wallpaper, so move into
         // place only once the download is complete.
         try? fileManager.removeItem(at: destination)
         try fileManager.moveItem(at: temporary, to: destination)
-        setWhereFrom(photo, on: destination)
+        setWhereFrom(artwork, on: destination)
 
-        index[destination.lastPathComponent] = photo
+        index[destination.lastPathComponent] = artwork
         saveIndex()
         refreshStats()
 
@@ -120,23 +143,25 @@ final class ImageCache {
 
     // MARK: - Naming
 
-    private func filename(for photo: Photo) -> String {
+    private func filename(for artwork: Artwork) -> String {
         let date = Self.dateFormatter.string(from: Date())
-        var parts = [date, Self.sanitize(photo.user.name)]
+        // A NASA picture with no copyright holder is public domain and names
+        // nobody, so the provider stands in rather than leaving a gap.
+        var parts = [date, Self.sanitize(artwork.creator ?? artwork.provider.displayName)]
 
-        if let caption = photo.caption {
-            parts.append(Self.sanitize(caption, joinedBy: "-"))
+        if let title = artwork.title {
+            parts.append(Self.sanitize(title, joinedBy: "-"))
         }
-        parts.append(photo.id)
+        parts.append(Self.sanitize(artwork.id, joinedBy: "-"))
 
-        // APFS allows 255 bytes; trim the caption rather than the ID.
+        // APFS allows 255 bytes; trim the title rather than the ID.
         var name = parts.joined(separator: " — ")
-        while name.utf8.count > 250 - 4, parts.count > 2 {
+        while name.utf8.count > 250 - 6, parts.count > 2 {
             parts.remove(at: 2)
             name = parts.joined(separator: " — ")
         }
 
-        return name + ".jpg"
+        return name + "." + artwork.fileExtension
     }
 
     private static func sanitize(_ text: String, joinedBy separator: String = " ") -> String {
@@ -157,10 +182,10 @@ final class ImageCache {
         return result.isEmpty ? String(words.first?.prefix(60) ?? "") : result
     }
 
-    /// Writes the Unsplash page URL into the file's "Where from" metadata, so
+    /// Writes the photo's page URL into the file's "Where from" metadata, so
     /// the source survives even if the file is renamed.
-    private func setWhereFrom(_ photo: Photo, on url: URL) {
-        let sources = [photo.webURL, photo.photographerURL].compactMap { $0?.absoluteString }
+    private func setWhereFrom(_ artwork: Artwork, on url: URL) {
+        let sources = [artwork.webURL, artwork.creatorURL].compactMap { $0?.absoluteString }
         guard let plist = try? PropertyListSerialization.data(
             fromPropertyList: sources, format: .binary, options: 0
         ) else { return }

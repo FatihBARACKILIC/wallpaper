@@ -1,16 +1,15 @@
 import SwiftUI
 
-/// In-app instructions for obtaining an Unsplash Access Key. Kept in the app
-/// rather than linked out so it still works offline and cannot rot with a
-/// changed help URL.
-struct AccessKeyGuide: View {
-    private static let applicationsURL = URL(string: "https://unsplash.com/oauth/applications")!
+/// In-app instructions for obtaining a NASA API key. Kept in the app for the
+/// same reason as `AccessKeyGuide`: it still works offline and cannot rot with
+/// a changed help URL.
+struct NASAKeyGuide: View {
+    private static let signupURL = URL(string: "https://api.nasa.gov")!
 
     private static let steps = [
-        "Sign in at unsplash.com, or create a free account.",
-        "Open the developer applications page and click New Application.",
-        "Accept the API terms and give the application any name.",
-        "Copy the Access Key — the Secret Key is not needed.",
+        "Open api.nasa.gov and fill in the short signup form.",
+        "The key arrives by email straight away — no account to create.",
+        "Paste it here.",
     ]
 
     var body: some View {
@@ -26,12 +25,12 @@ struct AccessKeyGuide: View {
                 }
             }
 
-            Link(destination: Self.applicationsURL) {
-                Label("Open the Unsplash applications page", systemImage: "arrow.up.forward.square")
+            Link(destination: Self.signupURL) {
+                Label("Open api.nasa.gov", systemImage: "arrow.up.forward.square")
             }
             .font(.callout)
 
-            Text("New applications start in Demo mode with 50 requests per hour. A wallpaper change costs about 2, so that is plenty.")
+            Text("A personal key allows 1000 requests per hour. A wallpaper change costs one, because APOD returns every photo in a single request.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -39,10 +38,10 @@ struct AccessKeyGuide: View {
     }
 }
 
-/// Text field plus "verify against the API" button, shared by setup and
-/// Settings. Verification makes one real request so a wrong key is caught here
-/// rather than silently at the next wallpaper change.
-struct AccessKeyField: View {
+/// Text field plus "verify against the API" button for the NASA key, matching
+/// `AccessKeyField`. Verification makes one real request so a wrong key is
+/// caught here rather than silently at the next wallpaper change.
+struct NASAKeyField: View {
     @Bindable var settings: SettingsStore
     @Binding var key: String
     var onVerified: () -> Void
@@ -59,7 +58,7 @@ struct AccessKeyField: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                SecureField("Access Key", text: $key)
+                SecureField("NASA API key", text: $key)
                     .textFieldStyle(.roundedBorder)
                     .onChange(of: key) { verification = .idle }
 
@@ -92,12 +91,12 @@ struct AccessKeyField: View {
         verification = .checking
 
         Task {
-            let client = UnsplashClient(accessKeyProvider: { candidate })
+            let client = NASAClient(apiKeyProvider: { candidate })
             do {
-                _ = try await client.randomArtworks(count: 1, from: Source(kind: .search, value: "nature"))
+                try await client.validate(key: candidate)
                 // Through the store, never straight to the keychain: it is what
                 // tells the rest of the UI a key now exists.
-                try settings.setAccessKey(candidate)
+                try settings.setNASAKey(candidate)
                 verification = .valid
                 onVerified()
             } catch {

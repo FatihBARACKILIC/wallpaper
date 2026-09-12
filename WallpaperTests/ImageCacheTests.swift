@@ -46,7 +46,7 @@ struct ImageCacheTests {
             try? FileManager.default.setAttributes([.creationDate: created], ofItemAtPath: url.path)
         }
 
-        func writeIndex(_ entries: [String: Photo]) {
+        func writeIndex(_ entries: [String: Artwork]) {
             guard let data = try? JSONEncoder().encode(entries) else { return }
             try? data.write(to: indexURL)
         }
@@ -75,7 +75,7 @@ struct ImageCacheTests {
         defer { sandbox.cleanUp() }
 
         let cache = ImageCache(session: stubbedSession(), directory: sandbox.photos)
-        let photo = makePhoto(id: "Ry9WBo3qmoc", name: "Ales Krivec", altDescription: "misty mountain lake")
+        let photo = makeArtwork(id: "Ry9WBo3qmoc", name: "Ales Krivec", altDescription: "misty mountain lake")
         let url = try await cache.download(photo, pixelSize: nil)
         let name = url.lastPathComponent
 
@@ -91,7 +91,7 @@ struct ImageCacheTests {
         defer { sandbox.cleanUp() }
 
         let cache = ImageCache(session: stubbedSession(), directory: sandbox.photos)
-        let url = try await cache.download(makePhoto(name: "Jane Doe"), pixelSize: nil)
+        let url = try await cache.download(makeArtwork(name: "Jane Doe"), pixelSize: nil)
 
         #expect(url.lastPathComponent.contains("Jane Doe"))
         #expect(url.lastPathComponent.hasSuffix("Ry9WBo3qmoc.jpg"))
@@ -103,7 +103,7 @@ struct ImageCacheTests {
         defer { sandbox.cleanUp() }
 
         let cache = ImageCache(session: stubbedSession(), directory: sandbox.photos)
-        let photo = makePhoto(name: "A/B\\C", altDescription: "forest/lake")
+        let photo = makeArtwork(name: "A/B\\C", altDescription: "forest/lake")
         let url = try await cache.download(photo, pixelSize: nil)
 
         #expect(!url.lastPathComponent.contains("/"))
@@ -116,7 +116,7 @@ struct ImageCacheTests {
         defer { sandbox.cleanUp() }
 
         let cache = ImageCache(session: stubbedSession(), directory: sandbox.photos)
-        let photo = makePhoto(altDescription: String(repeating: "mountain ", count: 40))
+        let photo = makeArtwork(altDescription: String(repeating: "mountain ", count: 40))
         let url = try await cache.download(photo, pixelSize: nil)
 
         #expect(url.lastPathComponent.utf8.count <= 250)
@@ -133,7 +133,7 @@ struct ImageCacheTests {
         defer { sandbox.cleanUp() }
 
         let cache = ImageCache(session: stubbedSession(), directory: sandbox.photos)
-        let photo = makePhoto(raw: "https://images.unsplash.com/fail-photo")
+        let photo = makeArtwork(raw: "https://images.unsplash.com/fail-photo")
 
         await #expect(throws: (any Error).self) {
             _ = try await cache.download(photo, pixelSize: nil)
@@ -147,7 +147,7 @@ struct ImageCacheTests {
         defer { sandbox.cleanUp() }
 
         let cache = ImageCache(session: stubbedSession(), directory: sandbox.photos)
-        let photo = makePhoto()
+        let photo = makeArtwork()
 
         let first = try await cache.download(photo, pixelSize: nil)
         let second = try await cache.download(photo, pixelSize: nil)
@@ -162,10 +162,10 @@ struct ImageCacheTests {
         defer { sandbox.cleanUp() }
 
         let cache = ImageCache(session: stubbedSession(), directory: sandbox.photos)
-        let photo = makePhoto()
+        let photo = makeArtwork()
         _ = try await cache.download(photo, pixelSize: nil)
 
-        #expect(cache.entries().map(\.photo.id) == [photo.id])
+        #expect(cache.entries().map(\.artwork.id) == [photo.id])
     }
 
     // MARK: - Eviction
@@ -178,7 +178,7 @@ struct ImageCacheTests {
         // The indexed file is much older, so age alone would evict it first.
         sandbox.writePhoto("indexed.jpg", created: Date().addingTimeInterval(-86_400 * 30))
         sandbox.writePhoto("unindexed.jpg", created: Date())
-        sandbox.writeIndex(["indexed.jpg": makePhoto()])
+        sandbox.writeIndex(["indexed.jpg": makeArtwork()])
 
         let cache = ImageCache(session: stubbedSession(), directory: sandbox.photos)
         cache.enforce(StorageLimit(isEnabled: true, maxPhotos: 1, maxBytes: .max), pinned: [])
@@ -195,7 +195,7 @@ struct ImageCacheTests {
 
         sandbox.writePhoto("old.jpg", created: Date().addingTimeInterval(-86_400))
         sandbox.writePhoto("new.jpg", created: Date())
-        sandbox.writeIndex(["old.jpg": makePhoto(id: "old"), "new.jpg": makePhoto(id: "new")])
+        sandbox.writeIndex(["old.jpg": makeArtwork(id: "old"), "new.jpg": makeArtwork(id: "new")])
 
         let cache = ImageCache(session: stubbedSession(), directory: sandbox.photos)
         cache.enforce(StorageLimit(isEnabled: true, maxPhotos: 1, maxBytes: .max), pinned: [])
@@ -210,7 +210,7 @@ struct ImageCacheTests {
 
         sandbox.writePhoto("old.jpg", created: Date().addingTimeInterval(-86_400))
         sandbox.writePhoto("new.jpg", created: Date())
-        sandbox.writeIndex(["old.jpg": makePhoto(id: "old"), "new.jpg": makePhoto(id: "new")])
+        sandbox.writeIndex(["old.jpg": makeArtwork(id: "old"), "new.jpg": makeArtwork(id: "new")])
 
         let cache = ImageCache(session: stubbedSession(), directory: sandbox.photos)
         let pinned = sandbox.photos.appending(path: "old.jpg")
@@ -227,7 +227,7 @@ struct ImageCacheTests {
 
         sandbox.writePhoto("old.jpg", bytes: 4096, created: Date().addingTimeInterval(-86_400))
         sandbox.writePhoto("new.jpg", bytes: 4096, created: Date())
-        sandbox.writeIndex(["old.jpg": makePhoto(id: "old"), "new.jpg": makePhoto(id: "new")])
+        sandbox.writeIndex(["old.jpg": makeArtwork(id: "old"), "new.jpg": makeArtwork(id: "new")])
 
         let cache = ImageCache(session: stubbedSession(), directory: sandbox.photos)
         cache.enforce(StorageLimit(isEnabled: true, maxPhotos: 100, maxBytes: 5000), pinned: [])
@@ -256,12 +256,12 @@ struct ImageCacheTests {
 
         sandbox.writePhoto("old.jpg", created: Date().addingTimeInterval(-86_400))
         sandbox.writePhoto("new.jpg", created: Date())
-        sandbox.writeIndex(["old.jpg": makePhoto(id: "old"), "new.jpg": makePhoto(id: "new")])
+        sandbox.writeIndex(["old.jpg": makeArtwork(id: "old"), "new.jpg": makeArtwork(id: "new")])
 
         let cache = ImageCache(session: stubbedSession(), directory: sandbox.photos)
         cache.enforce(StorageLimit(isEnabled: true, maxPhotos: 1, maxBytes: .max), pinned: [])
 
-        #expect(cache.entries().map(\.photo.id) == ["new"])
+        #expect(cache.entries().map(\.artwork.id) == ["new"])
     }
 
     // MARK: - Clearing

@@ -22,6 +22,10 @@ struct OnboardingView: View {
             case .schedule: "Choose how often it changes"
             }
         }
+
+        /// The key step can be passed straight through: a setup built only from
+        /// folders on this Mac needs no key at all.
+        var isOptional: Bool { self == .key }
     }
 
     var body: some View {
@@ -58,7 +62,7 @@ struct OnboardingView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(step.title)
                 .font(.title2.weight(.semibold))
-            Text("Step \(step.rawValue + 1) of \(Step.allCases.count)")
+            Text("Step \(step.rawValue + 1) of \(Step.allCases.count)\(step.isOptional ? " · optional" : "")")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -69,6 +73,14 @@ struct OnboardingView: View {
             Text("Wallpaper uses your own Unsplash key, stored in your Mac's keychain. It never leaves this Mac except to talk to Unsplash.")
                 .font(.callout)
                 .fixedSize(horizontal: false, vertical: true)
+
+            Label(
+                "Only needed for Unsplash sources. Skip it if you want to use folders of your own photos — those need no key and no connection.",
+                systemImage: "info.circle"
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
 
             AccessKeyField(settings: manager.settings, key: $key) {}
 
@@ -98,9 +110,16 @@ struct OnboardingView: View {
                 }
             }
 
+            if let blockerMessage {
+                Text(blockerMessage)
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             Spacer()
 
-            Button(step == .schedule ? "Start" : "Continue") {
+            Button(continueTitle) {
                 advance()
             }
             .keyboardShortcut(.defaultAction)
@@ -108,12 +127,37 @@ struct OnboardingView: View {
         }
     }
 
+    private var continueTitle: String {
+        if step == .schedule { return "Start" }
+        // Nothing typed on an optional step: say so, rather than leaving the
+        // user wondering whether they have missed something.
+        if step == .key, !manager.settings.hasAccessKey { return "Skip" }
+        return "Continue"
+    }
+
     private var canAdvance: Bool {
         switch step {
-        case .key: manager.settings.hasAccessKey
-        case .sources: !manager.settings.settings.sources.isEmpty
+        // Optional: a folder-only setup needs no key.
+        case .key: true
+        // Sources that are all waiting on a key would start an app that cannot
+        // fetch anything, so the usable ones are what count.
+        case .sources: !manager.settings.usableSources.isEmpty
         case .schedule: true
         }
+    }
+
+    /// Spelled out only when the reason is not already on screen. An empty list
+    /// says "No sources yet" itself; a list whose sources all need a key does
+    /// not explain itself at all.
+    private var blockerMessage: String? {
+        guard step == .sources,
+              !manager.settings.settings.sources.isEmpty,
+              manager.settings.usableSources.isEmpty
+        else { return nil }
+
+        return WallpaperManager.SetupError
+            .noUsableSources(manager.settings.settings.sources)
+            .localizedDescription
     }
 
     private func advance() {
@@ -143,12 +187,14 @@ struct IntervalPicker: View {
                 }
             }
 
+            // The worst case across the sources actually added: a change draws
+            // one source at random, and folders cost nothing at all.
             let requests = settings.settings.interval
-                .estimatedRequestsPerHour(photosPerChange: photosPerChange)
+                .estimatedRequestsPerHour(costPerChange: costPerChange)
             if requests > 0 {
-                Text("About \(requests) Unsplash requests per hour\(requests > 50 ? " — above a demo key's 50/hour limit." : ".")")
+                Text("At most \(requests) API request\(requests == 1 ? "" : "s") per hour\(overDemoLimit(requests) ? " — above an Unsplash demo key's 50/hour limit." : ".")")
                     .font(.caption)
-                    .foregroundStyle(requests > 50 ? .orange : .secondary)
+                    .foregroundStyle(overDemoLimit(requests) ? .orange : .secondary)
             }
         }
     }
@@ -157,6 +203,17 @@ struct IntervalPicker: View {
         settings.settings.monitorMode == .differentPerScreen
             ? max(1, WallpaperSetter.screenCount)
             : 1
+    }
+
+    private var costPerChange: Int {
+        Set(settings.settings.sources.map(\.kind.provider))
+            .map { $0.requestCost(photosPerChange: photosPerChange) }
+            .max() ?? 0
+    }
+
+    /// Only Unsplash has a 50/hour demo tier worth warning about.
+    private func overDemoLimit(_ requests: Int) -> Bool {
+        requests > 50 && settings.settings.sources.contains { $0.kind.provider == .unsplash }
     }
 }
 

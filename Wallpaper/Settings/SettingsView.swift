@@ -117,46 +117,110 @@ private struct SourcesSettings: View {
 
 private struct AccountSettings: View {
     @Bindable var manager: WallpaperManager
-    @State private var key = ""
-    @State private var isEditing = false
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                if manager.settings.hasAccessKey, !isEditing, let existing = manager.settings.accessKey {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Access Key")
-                            .font(.callout.weight(.medium))
-                        HStack {
-                            Text(Keychain.masked(existing))
-                                .font(.body.monospaced())
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                            Button("Replace…") {
-                                key = ""
-                                isEditing = true
-                            }
-                            Button("Remove") {
-                                manager.settings.clearAccessKey()
-                                key = ""
-                            }
-                        }
-                    }
-                } else {
-                    AccessKeyField(settings: manager.settings, key: $key) { isEditing = false }
-                }
-
-                ApplicationNameField(settings: manager.settings)
-
-                RateLimitGauge(rateLimit: manager.client.rateLimit)
-
+            VStack(alignment: .leading, spacing: 24) {
+                unsplash
                 Divider()
-
-                Text("How to get a key")
-                    .font(.callout.weight(.medium))
-                AccessKeyGuide()
+                nasa
             }
             .padding(20)
+        }
+    }
+
+    // MARK: - Unsplash
+
+    @State private var unsplashKey = ""
+    @State private var isEditingUnsplash = false
+
+    @ViewBuilder
+    private var unsplash: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Unsplash")
+                .font(.headline)
+            Text("Needed for topic, collection and search sources.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            if manager.settings.hasAccessKey, !isEditingUnsplash, let existing = manager.settings.accessKey {
+                storedKey(existing) {
+                    unsplashKey = ""
+                    isEditingUnsplash = true
+                } remove: {
+                    manager.settings.clearAccessKey()
+                    unsplashKey = ""
+                }
+            } else {
+                AccessKeyField(settings: manager.settings, key: $unsplashKey) {
+                    isEditingUnsplash = false
+                }
+            }
+
+            ApplicationNameField(settings: manager.settings)
+
+            RateLimitGauge(name: "Unsplash", rateLimit: manager.client.rateLimit)
+
+            DisclosureGroup("How to get a key") {
+                AccessKeyGuide()
+                    .padding(.top, 8)
+            }
+            .font(.callout.weight(.medium))
+        }
+    }
+
+    // MARK: - NASA
+
+    @State private var nasaKey = ""
+    @State private var isEditingNASA = false
+
+    @ViewBuilder
+    private var nasa: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("NASA")
+                .font(.headline)
+            Text("Needed for the Astronomy Picture of the Day source. Not needed for anything else.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            if manager.settings.hasNASAKey, !isEditingNASA, let existing = manager.settings.nasaKey {
+                storedKey(existing) {
+                    nasaKey = ""
+                    isEditingNASA = true
+                } remove: {
+                    manager.settings.clearNASAKey()
+                    nasaKey = ""
+                }
+            } else {
+                NASAKeyField(settings: manager.settings, key: $nasaKey) {
+                    isEditingNASA = false
+                }
+            }
+
+            RateLimitGauge(name: "NASA", rateLimit: manager.nasa.rateLimit)
+
+            DisclosureGroup("How to get a key") {
+                NASAKeyGuide()
+                    .padding(.top, 8)
+            }
+            .font(.callout.weight(.medium))
+        }
+    }
+
+    /// A key already in the keychain, shown masked — the value itself is never
+    /// put on screen in full.
+    private func storedKey(
+        _ value: String,
+        replace: @escaping () -> Void,
+        remove: @escaping () -> Void
+    ) -> some View {
+        HStack {
+            Text(Keychain.masked(value))
+                .font(.body.monospaced())
+                .foregroundStyle(.secondary)
+            Spacer()
+            Button("Replace…", action: replace)
+            Button("Remove", action: remove)
         }
     }
 }

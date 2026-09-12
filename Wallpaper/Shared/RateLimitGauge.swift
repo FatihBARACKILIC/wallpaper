@@ -1,16 +1,17 @@
 import SwiftUI
 
-/// Read-only view of the hourly Unsplash quota.
+/// Read-only view of one API's hourly quota.
 ///
 /// The numbers only refresh when the app makes a request, so the reading is
 /// shown with its age — refreshing it on demand would itself cost a request.
 struct RateLimitGauge: View {
+    let name: String
     let rateLimit: RateLimit?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text("Unsplash quota")
+                Text("\(name) quota")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()

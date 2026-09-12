@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import Wallpaper
 
@@ -82,5 +83,64 @@ struct SourceParsingTests {
         #expect(!Source(kind: .collection, value: "1234", title: "Wallpapers").needsTitle)
         #expect(!Source(kind: .topic, value: "nature").needsTitle)
         #expect(!Source(kind: .search, value: "forest").needsTitle)
+    }
+
+    // MARK: - NASA APOD
+
+    @Test("APOD is recognised by name and by link")
+    func apodByNameAndLink() {
+        check("apod", .apod, Source.apodValue)
+        check("NASA APOD", .apod, Source.apodValue)
+        check("Astronomy Picture of the Day", .apod, Source.apodValue)
+        check("https://apod.nasa.gov/apod/ap200617.html", .apod, Source.apodValue)
+        check("apod.nasa.gov", .apod, Source.apodValue)
+    }
+
+    @Test("A search that merely mentions NASA stays a search")
+    func apodDoesNotSwallowSearches() {
+        // Only the exact names count, or "nasa rocket launch" would silently
+        // become the APOD source instead of an Unsplash search.
+        check("nasa rocket launch", .search, "nasa rocket launch")
+        check("apod photography", .search, "apod photography")
+    }
+
+    // MARK: - Folders
+
+    @Test("A path that really is a folder becomes a folder source")
+    func folderPath() {
+        let folder = TemporaryFolder()
+        defer { folder.cleanUp() }
+
+        check(folder.url.path, .folder, folder.url.standardizedFileURL.path)
+        check("file://\(folder.url.path)", .folder, folder.url.standardizedFileURL.path)
+    }
+
+    @Test("A path that is not a folder is still just a search")
+    func nonFolderPathsStaySearches() {
+        // Checking the disk rather than the spelling is what keeps a search
+        // containing a slash from being mistaken for a folder.
+        let missing = "/definitely/not/here-\(UUID().uuidString)"
+        check(missing, .search, missing)
+    }
+
+    @Test("A folder source is named after the folder, not its whole path")
+    func folderTitle() {
+        let folder = TemporaryFolder()
+        defer { folder.cleanUp() }
+
+        let source = Source.folder(at: folder.url)
+        #expect(source.title == folder.url.lastPathComponent)
+        #expect(source.shortLabel == "f/\(folder.url.lastPathComponent)")
+    }
+
+    // MARK: - Keys each kind needs
+
+    @Test("Only the API kinds are tied to a provider that needs a key")
+    func providerPerKind() {
+        #expect(Source.Kind.topic.provider == .unsplash)
+        #expect(Source.Kind.collection.provider == .unsplash)
+        #expect(Source.Kind.search.provider == .unsplash)
+        #expect(Source.Kind.apod.provider == .apod)
+        #expect(Source.Kind.folder.provider == .local)
     }
 }

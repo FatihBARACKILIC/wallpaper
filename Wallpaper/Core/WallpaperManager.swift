@@ -30,10 +30,25 @@ final class WallpaperManager {
     /// from `status`.
     private(set) var notice: String?
 
-    /// A photo and the local file it was applied from.
+    /// A photo and the file it was applied from — a download in the cache, or
+    /// one of the user's own files where it already lies.
     struct Applied: Codable, Hashable {
-        var photo: Photo
+        var artwork: Artwork
         var url: URL
+
+        enum CodingKeys: String, CodingKey {
+            // Persisted as "photo" before the app had more than one provider.
+            // Kept under the old name so an upgrade does not forget what is
+            // already on screen.
+            case artwork = "photo"
+            case url
+        }
+
+        /// A photo from the user's own folder can be deleted behind the app's
+        /// back; re-applying a file that is gone would clear the desktop.
+        var stillExists: Bool {
+            !artwork.origin.isLocalFile || FileManager.default.fileExists(atPath: url.path)
+        }
     }
 
     /// What is on screen right now, in screen order.
@@ -46,16 +61,17 @@ final class WallpaperManager {
     }
 
     /// Photos currently on screen — every one of them has to be credited.
-    var currentPhotos: [Photo] { current.map(\.photo) }
+    var currentArtworks: [Artwork] { current.map(\.artwork) }
 
     let settings: SettingsStore
     let client: UnsplashClient
+    let nasa: NASAClient
     let cache: ImageCache
     let scheduler: Scheduler
 
-    /// Photos already downloaded for the next change, so applying a wallpaper
+    /// Photos already readied for the next change, so applying a wallpaper
     /// touches the disk rather than the network.
-    private var prefetched: [(photo: Photo, url: URL)] = []
+    private var prefetched: [Applied] = []
     private var prefetchTask: Task<Void, Never>?
 
     /// Guards against two changes overlapping — they would race on `current`
@@ -79,11 +95,13 @@ final class WallpaperManager {
     init(
         settings: SettingsStore = SettingsStore(),
         client: UnsplashClient = UnsplashClient(),
+        nasa: NASAClient = NASAClient(),
         cache: ImageCache = ImageCache(),
         scheduler: Scheduler = Scheduler()
     ) {
         self.settings = settings
         self.client = client
+        self.nasa = nasa
         self.cache = cache
         self.scheduler = scheduler
         self.current = Self.restoreCurrent()
@@ -108,8 +126,13 @@ final class WallpaperManager {
         UserDefaults.standard.set(data, forKey: Self.currentKey)
     }
 
+    /// Ready means at least one source can actually be drawn from right now.
+    ///
+    /// Not "has an Unsplash key": a setup made only of local folders needs no
+    /// key and no network at all, and demanding one would lock such a user out
+    /// of their own photos.
     var isReady: Bool {
-        settings.hasAccessKey && !settings.settings.sources.isEmpty
+        !settings.usableSources.isEmpty
     }
 
     // MARK: - Lifecycle
@@ -189,12 +212,12 @@ final class WallpaperManager {
         isChanging = true
         defer { isChanging = false }
 
-        guard settings.hasAccessKey else {
-            status = .failed(UnsplashError.missingAccessKey.localizedDescription)
-            return
-        }
         guard !settings.settings.sources.isEmpty else {
             status = .failed("No sources added yet. Add one in Settings.")
+            return
+        }
+        guard !settings.usableSources.isEmpty else {
+            status = .failed(SetupError.noUsableSources(settings.settings.sources).localizedDescription)
             return
         }
 
@@ -206,7 +229,7 @@ final class WallpaperManager {
 
             try await applyWithTransition(batch.map(\.url))
 
-            current = batch.map { Applied(photo: $0.photo, url: $0.url) }
+            current = batch
             Log.wallpaper.info("wallpaper changed: \(batch.count, privacy: .public) photo(s)")
             lastChangeDate = Date()
             status = .idle
@@ -215,8 +238,10 @@ final class WallpaperManager {
             stopNetworkMonitor()
 
             // Required by the Unsplash guidelines, but never worth failing over.
+            // Only Unsplash photos have anything to report; the client ignores
+            // the rest.
             for entry in batch {
-                await client.reportDownload(for: entry.photo)
+                await client.reportDownload(for: entry.artwork)
             }
 
             housekeep()
@@ -227,8 +252,8 @@ final class WallpaperManager {
     }
 
     /// Uses the prefetched photos when they fit, otherwise fetches fresh ones.
-    private func takePhotos(count: Int) async throws -> [(photo: Photo, url: URL)] {
-        if prefetched.count >= count {
+    private func takePhotos(count: Int) async throws -> [Applied] {
+        if prefetched.count >= count, prefetched.prefix(count).allSatisfy(\.stillExists) {
             let batch = Array(prefetched.prefix(count))
             prefetched.removeFirst(count)
             return batch
@@ -238,20 +263,68 @@ final class WallpaperManager {
         return try await fetchAndDownload(count: count)
     }
 
-    private func fetchAndDownload(count: Int) async throws -> [(photo: Photo, url: URL)] {
-        guard let source = settings.settings.sources.randomElement() else {
-            throw UnsplashError.missingAccessKey
+    /// Picks a source and readies `count` photos from it.
+    ///
+    /// Sources are tried in random order, and a failure that is specific to one
+    /// source moves on to the next: an unplugged drive or a search that matched
+    /// nothing should not freeze the desktop of someone who also has three
+    /// sources that work. A bad key or an exhausted quota is not source
+    /// specific — that is the user's to fix, and it is reported at once.
+    private func fetchAndDownload(count: Int) async throws -> [Applied] {
+        let sources = settings.usableSources.shuffled()
+        guard !sources.isEmpty else {
+            throw SetupError.noUsableSources(settings.settings.sources)
         }
 
-        let photos = try await client.randomPhotos(count: count, from: source)
+        var lastError: (any Error)?
+        for source in sources {
+            do {
+                return try await fetch(count: count, from: source)
+            } catch let error where Self.isSourceSpecific(error) {
+                Log.wallpaper.info(
+                    "source \(source.shortLabel, privacy: .public) unusable, trying another: \(error.localizedDescription, privacy: .public)"
+                )
+                lastError = error
+            }
+        }
 
-        var results: [(photo: Photo, url: URL)] = []
-        for (index, photo) in photos.prefix(count).enumerated() {
+        throw lastError ?? SetupError.noUsableSources(settings.settings.sources)
+    }
+
+    private func fetch(count: Int, from source: Source) async throws -> [Applied] {
+        switch source.kind {
+        case .folder:
+            // Nothing to download: the files are already on this Mac, and they
+            // are the user's, so they are used exactly where they lie.
+            let inUse = Set(current.map(\.url.standardizedFileURL))
+            return try LocalFolder
+                .randomArtworks(count: count, from: source, avoiding: inUse)
+                .map { Applied(artwork: $0, url: $0.origin.url) }
+
+        case .apod:
+            return try await downloadAll(nasa.randomArtworks(count: count), count: count)
+
+        case .topic, .collection, .search:
+            return try await downloadAll(client.randomArtworks(count: count, from: source), count: count)
+        }
+    }
+
+    private func downloadAll(_ artworks: [Artwork], count: Int) async throws -> [Applied] {
+        var results: [Applied] = []
+        for (index, artwork) in artworks.prefix(count).enumerated() {
             let size = downloadSize(forScreenAt: index)
-            results.append((photo, try await cache.download(photo, pixelSize: size)))
+            results.append(Applied(artwork: artwork, url: try await cache.download(artwork, pixelSize: size)))
         }
-
         return results
+    }
+
+    /// Whether the failure says "this source won't do" rather than "the app is
+    /// misconfigured" or "the network is down".
+    private static func isSourceSpecific(_ error: any Error) -> Bool {
+        if error is LocalFolderError { return true }
+        if case .noPhotosFound = error as? UnsplashError { return true }
+        if case .noPhotosFound = error as? NASAError { return true }
+        return false
     }
 
     /// `nil` means "leave the photo at its own size".
@@ -275,6 +348,27 @@ final class WallpaperManager {
 
     // MARK: - Failure recovery
 
+    /// The app is configured, but not in a way it can act on.
+    enum SetupError: LocalizedError {
+        /// Sources exist, but every one of them is waiting on a key.
+        case noUsableSources([Source])
+
+        var errorDescription: String? {
+            switch self {
+            case .noUsableSources(let sources):
+                let needed = Set(sources.map(\.kind.provider))
+                return switch (needed.contains(.unsplash), needed.contains(.apod)) {
+                case (true, true):
+                    "Your sources need an Unsplash Access Key and a NASA API key. Add them in Settings."
+                case (false, true):
+                    "The NASA APOD source needs a NASA API key. Add one in Settings."
+                default:
+                    "Your Unsplash sources need an Access Key. Add one in Settings."
+                }
+            }
+        }
+    }
+
     /// What to do about a failed change. Some failures fix themselves, some
     /// need the user, and waiting a whole interval to find out which is no good
     /// when the interval is a week.
@@ -283,8 +377,8 @@ final class WallpaperManager {
         case waitForNetwork
         case userMustAct
 
-        /// Only worth reaching for the cache when Unsplash is unreachable, not
-        /// when the key or the sources are wrong.
+        /// Only worth reaching for the cache when the network is unreachable,
+        /// not when the key or the sources are wrong.
         var allowsCacheFallback: Bool {
             switch self {
             case .retry, .waitForNetwork: true
@@ -297,8 +391,8 @@ final class WallpaperManager {
         consecutiveFailures += 1
         let recovery = recovery(for: error)
 
-        // Unsplash is out of reach, but the disk is not: keep rotating through
-        // photos already downloaded rather than freezing on one wallpaper.
+        // The network is out of reach, but the disk is not: keep rotating
+        // through photos already downloaded rather than freezing on one.
         let usedCache = recovery.allowsCacheFallback ? await applyFromCache() : false
 
         switch recovery {
@@ -319,15 +413,24 @@ final class WallpaperManager {
     }
 
     private func cacheNotice(for error: any Error) -> String {
-        guard case .rateLimited(let resetsAt) = error as? UnsplashError else {
-            return "Couldn't reach Unsplash — showing a photo you already have."
+        let limited: (name: String, resetsAt: Date?)? = switch error {
+        case let error as UnsplashError:
+            if case .rateLimited(let resetsAt) = error { ("Unsplash", resetsAt) } else { nil }
+        case let error as NASAError:
+            if case .rateLimited(let resetsAt) = error { ("NASA", resetsAt) } else { nil }
+        default:
+            nil
         }
 
-        guard let resetsAt else {
-            return "Unsplash hourly limit reached — showing a photo you already have."
+        guard let limited else {
+            return "Couldn't fetch a new photo — showing one you already have."
         }
+        guard let resetsAt = limited.resetsAt else {
+            return "\(limited.name) hourly limit reached — showing a photo you already have."
+        }
+
         let time = resetsAt.formatted(date: .omitted, time: .shortened)
-        return "Unsplash hourly limit reached — showing a photo you already have. New ones at \(time)."
+        return "\(limited.name) hourly limit reached — showing a photo you already have. New ones at \(time)."
     }
 
     /// Picks photos already on disk, avoiding the ones on screen so the
@@ -354,7 +457,7 @@ final class WallpaperManager {
             return false
         }
 
-        current = chosen.map { Applied(photo: $0.photo, url: $0.url) }
+        current = chosen.map { Applied(artwork: $0.artwork, url: $0.url) }
         lastChangeDate = Date()
         // No download is reported: nothing was downloaded, and the photo was
         // already reported the first time it was used.
@@ -363,33 +466,66 @@ final class WallpaperManager {
     }
 
     private func recovery(for error: any Error) -> Recovery {
-        guard let unsplashError = error as? UnsplashError else {
-            return .retry(after: backoffDelay)
-        }
+        switch error {
+        case let error as UnsplashError:
+            switch error {
+            case .missingAccessKey, .invalidAccessKey, .noPhotosFound:
+                // Nothing retrying can fix — the key or the source has to change.
+                return .userMustAct
 
-        switch unsplashError {
-        case .missingAccessKey, .invalidAccessKey, .noPhotosFound:
-            // Nothing retrying can fix — the key or the source has to change.
+            case .rateLimited(let resetsAt):
+                // Retrying before the quota rolls over just wastes requests.
+                return .retry(after: waitForQuota(until: resetsAt))
+
+            case .unexpectedStatus:
+                return .retry(after: backoffDelay)
+
+            case .transport(let underlying):
+                return Self.isOffline(underlying) ? .waitForNetwork : .retry(after: backoffDelay)
+            }
+
+        case let error as NASAError:
+            switch error {
+            case .missingAPIKey, .invalidAPIKey:
+                return .userMustAct
+
+            case .noPhotosFound:
+                // Today's random draw was all videos. A fresh draw is a
+                // different set of days, so this really does fix itself.
+                return .retry(after: backoffDelay)
+
+            case .rateLimited(let resetsAt):
+                return .retry(after: waitForQuota(until: resetsAt))
+
+            case .unexpectedStatus:
+                return .retry(after: backoffDelay)
+
+            case .transport(let underlying):
+                return Self.isOffline(underlying) ? .waitForNetwork : .retry(after: backoffDelay)
+            }
+
+        // A folder that is gone and a setup with no usable source both need the
+        // user: no amount of retrying will plug a drive back in or type a key.
+        case is LocalFolderError, is SetupError:
             return .userMustAct
 
-        case .rateLimited(let resetsAt):
-            // Retrying before the quota rolls over just wastes requests.
-            let wait = (resetsAt?.timeIntervalSinceNow ?? 3600) + 60
-            return .retry(after: max(60, wait))
-
-        case .unexpectedStatus:
+        default:
             return .retry(after: backoffDelay)
-
-        case .transport(let underlying):
-            let code = (underlying as NSError).code
-            let offline = [
-                NSURLErrorNotConnectedToInternet,
-                NSURLErrorNetworkConnectionLost,
-                NSURLErrorCannotConnectToHost,
-                NSURLErrorDNSLookupFailed,
-            ]
-            return offline.contains(code) ? .waitForNetwork : .retry(after: backoffDelay)
         }
+    }
+
+    /// Long enough for the quota to roll over, never shorter than a minute.
+    private func waitForQuota(until resetsAt: Date?) -> TimeInterval {
+        max(60, (resetsAt?.timeIntervalSinceNow ?? 3600) + 60)
+    }
+
+    private static func isOffline(_ error: any Error) -> Bool {
+        [
+            NSURLErrorNotConnectedToInternet,
+            NSURLErrorNetworkConnectionLost,
+            NSURLErrorCannotConnectToHost,
+            NSURLErrorDNSLookupFailed,
+        ].contains((error as NSError).code)
     }
 
     /// 30s, 1m, 2m, 5m, 15m, then flat. Long enough not to hammer Unsplash,

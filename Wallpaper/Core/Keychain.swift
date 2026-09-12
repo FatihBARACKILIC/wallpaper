@@ -1,7 +1,7 @@
 import Foundation
 import Security
 
-/// Stores the user's Unsplash Access Key in the login keychain.
+/// Stores the user's API keys in the login keychain.
 ///
 /// Not the data-protection keychain: that one requires a
 /// `keychain-access-groups` entitlement, which in turn forces a provisioning
@@ -10,10 +10,28 @@ import Security
 /// login, and binds the item to this app's code signature — which is the
 /// protection that matters here.
 ///
-/// The value is never logged and never written to UserDefaults.
-enum Keychain {
+/// Values are never logged and never written to UserDefaults.
+struct Keychain {
     private static let service = "com.barackilic.Wallpaper"
-    private static let account = "unsplash-access-key"
+
+    /// Required for the Unsplash sources (topic, collection, search).
+    static let unsplashAccessKey = Keychain(
+        account: "unsplash-access-key",
+        label: "Unsplash Access Key"
+    )
+
+    /// Required for the NASA APOD source.
+    static let nasaAPIKey = Keychain(
+        account: "nasa-api-key",
+        label: "NASA API Key"
+    )
+
+    /// Every item the app owns. The uninstaller walks this, so a key added here
+    /// is removed there without anyone having to remember.
+    static let all: [Keychain] = [unsplashAccessKey, nasaAPIKey]
+
+    let account: String
+    let label: String
 
     enum Failure: LocalizedError {
         case unexpectedStatus(OSStatus)
@@ -27,20 +45,20 @@ enum Keychain {
         }
     }
 
-    private static var baseQuery: [String: Any] {
+    private var baseQuery: [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
+            kSecAttrService as String: Self.service,
             kSecAttrAccount as String: account,
         ]
     }
 
-    static func save(_ accessKey: String) throws {
-        let data = Data(accessKey.utf8)
+    func save(_ value: String) throws {
+        let data = Data(value.utf8)
 
         var attributes = baseQuery
         attributes[kSecValueData as String] = data
-        attributes[kSecAttrDescription as String] = "Unsplash Access Key"
+        attributes[kSecAttrDescription as String] = label
 
         let status = SecItemAdd(attributes as CFDictionary, nil)
         switch status {
@@ -55,7 +73,7 @@ enum Keychain {
         }
     }
 
-    static func read() -> String? {
+    func read() -> String? {
         var query = baseQuery
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -69,13 +87,13 @@ enum Keychain {
         return key
     }
 
-    static func delete() {
+    func delete() {
         SecItemDelete(baseQuery as CFDictionary)
     }
 
     /// `"abcd…Wx9Y"` — safe to show in the UI and in error messages.
-    static func masked(_ accessKey: String) -> String {
-        guard accessKey.count > 8 else { return String(repeating: "•", count: accessKey.count) }
-        return "\(accessKey.prefix(4))…\(accessKey.suffix(4))"
+    static func masked(_ value: String) -> String {
+        guard value.count > 8 else { return String(repeating: "•", count: value.count) }
+        return "\(value.prefix(4))…\(value.suffix(4))"
     }
 }

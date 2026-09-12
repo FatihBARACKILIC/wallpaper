@@ -2,6 +2,8 @@ import Foundation
 
 // MARK: - Models
 
+/// Unsplash's own JSON shape. It stops at the edge of the client: everything
+/// past `randomArtworks` deals in `Artwork`.
 struct Photo: Codable, Hashable, Identifiable, Sendable {
     struct URLs: Codable, Hashable, Sendable {
         let raw: String
@@ -52,34 +54,20 @@ struct Photo: Codable, Hashable, Identifiable, Sendable {
         return text?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
     }
 
-    /// A CDN URL for the photo. Resizing happens at Unsplash, so a screen-sized
-    /// JPEG costs about 1 MB instead of the 10–30 MB original.
-    ///
-    /// - Parameter pixelSize: the size to crop to, or `nil` to keep the photo's
-    ///   own dimensions.
-    func downloadURL(pixelSize: CGSize?) -> URL? {
-        guard var components = URLComponents(string: urls.raw) else { return URL(string: urls.full) }
-
-        var items = components.queryItems ?? []
-        items.removeAll { ["w", "h", "fit", "crop", "q", "fm", "dpr"].contains($0.name) }
-
-        if let pixelSize {
-            items.append(contentsOf: [
-                URLQueryItem(name: "w", value: String(Int(pixelSize.width))),
-                URLQueryItem(name: "h", value: String(Int(pixelSize.height))),
-                URLQueryItem(name: "fit", value: "crop"),
-                URLQueryItem(name: "crop", value: "entropy"),
-            ])
-        }
-
-        // Still transcode: the raw original can be a 50 MB uncompressed file.
-        items.append(contentsOf: [
-            URLQueryItem(name: "q", value: "85"),
-            URLQueryItem(name: "fm", value: "jpg"),
-        ])
-        components.queryItems = items
-
-        return components.url ?? URL(string: urls.full)
+    /// `raw` carries the CDN's resizing parameters; `full` is the fallback for
+    /// the rare photo whose `raw` will not parse.
+    var artwork: Artwork {
+        let remote = URL(string: urls.raw) ?? URL(string: urls.full)
+        return Artwork(
+            id: id,
+            provider: .unsplash,
+            origin: .remote(remote ?? URL(fileURLWithPath: "/dev/null")),
+            title: caption,
+            creator: user.name,
+            creatorURL: photographerURL,
+            webURL: webURL,
+            downloadLocation: links.downloadLocation
+        )
     }
 }
 
@@ -90,7 +78,26 @@ struct RateLimit: Codable, Hashable, Sendable {
     var remaining: Int
     var observedAt: Date
 
-    /// Unsplash quotas roll over on the hour.
+    /// Both Unsplash and NASA report the same two headers, and both roll the
+    /// quota over on the hour.
+    init?(_ response: HTTPURLResponse) {
+        guard
+            let limit = response.value(forHTTPHeaderField: "X-Ratelimit-Limit").flatMap(Int.init),
+            let remaining = response.value(forHTTPHeaderField: "X-Ratelimit-Remaining").flatMap(Int.init)
+        else { return nil }
+
+        self.limit = limit
+        self.remaining = remaining
+        self.observedAt = Date()
+    }
+
+    init(limit: Int, remaining: Int, observedAt: Date) {
+        self.limit = limit
+        self.remaining = remaining
+        self.observedAt = observedAt
+    }
+
+    /// Quotas roll over on the hour.
     var resetsAt: Date {
         Calendar.current.nextDate(
             after: observedAt,
@@ -151,7 +158,7 @@ final class UnsplashClient {
     init(
         session: URLSession = .shared,
         defaults: UserDefaults = .standard,
-        accessKeyProvider: @escaping () -> String? = { Keychain.read() }
+        accessKeyProvider: @escaping () -> String? = { Keychain.unsplashAccessKey.read() }
     ) {
         self.session = session
         self.defaults = defaults
@@ -160,7 +167,7 @@ final class UnsplashClient {
     }
 
     /// Fetches `count` random photos from `source`.
-    func randomPhotos(count: Int, from source: Source) async throws -> [Photo] {
+    func randomArtworks(count: Int, from source: Source) async throws -> [Artwork] {
         var items = [
             URLQueryItem(name: "count", value: String(max(1, min(count, 30)))),
             URLQueryItem(name: "orientation", value: "landscape"),
@@ -174,17 +181,23 @@ final class UnsplashClient {
             items.append(URLQueryItem(name: "collections", value: source.value))
         case .search:
             items.append(URLQueryItem(name: "query", value: source.value))
+        case .apod, .folder:
+            // Routed elsewhere; the client is never handed one of these.
+            throw UnsplashError.noPhotosFound(source)
         }
 
         let photos: [Photo] = try await get("/photos/random", query: items)
         guard !photos.isEmpty else { throw UnsplashError.noPhotosFound(source) }
-        return photos
+        return photos.map(\.artwork)
     }
 
     /// Required by the Unsplash API guidelines once a photo is actually used.
     /// Failure here must never block setting the wallpaper.
-    func reportDownload(for photo: Photo) async {
-        guard let url = URL(string: photo.links.downloadLocation) else { return }
+    func reportDownload(for artwork: Artwork) async {
+        guard artwork.provider == .unsplash,
+              let location = artwork.downloadLocation,
+              let url = URL(string: location)
+        else { return }
         _ = try? await send(request(for: url))
     }
 
@@ -253,7 +266,7 @@ final class UnsplashClient {
             throw UnsplashError.unexpectedStatus(-1)
         }
 
-        recordRateLimit(from: http)
+        if let observed = RateLimit(http) { rateLimit = observed }
 
         switch http.statusCode {
         case 200..<300:
@@ -271,15 +284,6 @@ final class UnsplashClient {
         default:
             throw UnsplashError.unexpectedStatus(http.statusCode)
         }
-    }
-
-    private func recordRateLimit(from response: HTTPURLResponse) {
-        guard
-            let limit = response.value(forHTTPHeaderField: "X-Ratelimit-Limit").flatMap(Int.init),
-            let remaining = response.value(forHTTPHeaderField: "X-Ratelimit-Remaining").flatMap(Int.init)
-        else { return }
-
-        rateLimit = RateLimit(limit: limit, remaining: remaining, observedAt: Date())
     }
 }
 

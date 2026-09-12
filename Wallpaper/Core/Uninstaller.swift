@@ -90,8 +90,10 @@ enum Uninstaller {
         }
         report.loginItemFailed = LoginItem.isRegistered
 
-        Keychain.delete()
-        report.keychainFailed = Keychain.read() != nil
+        // Every key the app owns, so adding one to `Keychain.all` is enough to
+        // have it removed here too.
+        for item in Keychain.all { item.delete() }
+        report.keychainFailed = Keychain.all.contains { $0.read() != nil }
 
         // Empties the settings, the schedule and the topic-ID cache now, so
         // what cfprefsd flushes on exit is an empty domain rather than the
