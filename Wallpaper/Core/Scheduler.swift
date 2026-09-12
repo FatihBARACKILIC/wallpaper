@@ -2,18 +2,24 @@ import Foundation
 
 /// Drives the wallpaper rotation.
 ///
-/// Uses `NSBackgroundActivityScheduler` rather than a `Timer` so macOS can
-/// coalesce wakeups with other system activity — the app costs nothing while
-/// idle. The next due date is persisted, so a change missed while the Mac was
-/// asleep or shut down fires on the next launch instead of being skipped.
+/// Fires from a single run-loop timer armed for the next due date — one wakeup
+/// per interval, nothing in between. The next due date is persisted, so a change
+/// missed while the Mac was asleep or shut down fires on the next launch instead
+/// of being skipped.
+///
+/// This used to be an `NSBackgroundActivityScheduler`, which was the wrong tool:
+/// that schedules *discretionary* work, so `dasd` scores every run against system
+/// policy and on battery answers `Decision: MNP` — may not proceed. Measured on a
+/// discharging Mac, a 5 minute interval was stretched to 23–28 minutes and often
+/// skipped outright. Rotation is something the user set on a clock, not a chore
+/// the system may defer, so it owns its own timer.
 @Observable
 final class Scheduler {
     private static let nextChangeKey = "nextChangeDate"
-    private static let activityIdentifier = "com.barackilic.Wallpaper.rotate"
 
     private(set) var nextChangeDate: Date?
 
-    private var activity: NSBackgroundActivityScheduler?
+    private var timer: Timer?
     private let defaults: UserDefaults
     private var interval: ChangeInterval = .manual
     private var onFire: (() async -> Void)?
@@ -28,8 +34,7 @@ final class Scheduler {
         self.interval = interval
         self.onFire = onFire
 
-        activity?.invalidate()
-        activity = nil
+        disarm()
 
         guard let duration = interval.duration else {
             nextChangeDate = nil
@@ -37,37 +42,26 @@ final class Scheduler {
             return
         }
 
-        if nextChangeDate == nil {
+        // A shorter interval has to take effect now. Keeping a due date left over
+        // from a longer one would make the change the user just asked for wait out
+        // the old interval — switch from weekly to 5 minutes and nothing happens
+        // for a week.
+        if let due = nextChangeDate, due.timeIntervalSinceNow <= duration {
+            arm(for: due)
+        } else {
             scheduleNext(after: duration)
         }
-
-        let scheduler = NSBackgroundActivityScheduler(identifier: Self.activityIdentifier)
-        scheduler.repeats = true
-        scheduler.interval = duration
-        // A generous tolerance lets macOS batch our wakeup with others instead
-        // of waking the CPU just for us.
-        scheduler.tolerance = min(duration * 0.2, 30 * 60)
-        scheduler.qualityOfService = .background
-
-        scheduler.schedule { [weak self] completion in
-            Task { @MainActor in
-                await self?.fire()
-                completion(.finished)
-            }
-        }
-
-        activity = scheduler
     }
 
     func stop() {
-        activity?.invalidate()
-        activity = nil
+        disarm()
     }
 
     /// Forgets when the next change was due. Used when setup finishes: a due
     /// date left over from an earlier configuration would fire a change on top
     /// of the one setup triggers itself.
     func reset() {
+        disarm()
         nextChangeDate = nil
         defaults.removeObject(forKey: Self.nextChangeKey)
     }
@@ -80,13 +74,15 @@ final class Scheduler {
     }
 
     /// Fires immediately if the scheduled change came due while the app was not
-    /// running. Call once at launch and on wake.
+    /// running, or while the Mac was asleep. Call once at launch and on wake.
     func fireIfOverdue() async {
         guard interval.duration != nil, let due = nextChangeDate, Date() >= due else { return }
         await fire()
     }
 
     private func fire() async {
+        disarm()
+
         await onFire?()
 
         if let duration = interval.duration {
@@ -98,5 +94,29 @@ final class Scheduler {
         let next = Date().addingTimeInterval(duration)
         nextChangeDate = next
         defaults.set(next, forKey: Self.nextChangeKey)
+        arm(for: next)
+    }
+
+    private func arm(for date: Date) {
+        disarm()
+        guard onFire != nil else { return }
+
+        let timer = Timer(fire: date, interval: 0, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                await self?.fire()
+            }
+        }
+        // Enough slack for the system to coalesce our wakeup with others, but
+        // bounded so a short interval stays recognisably the interval the user
+        // picked: 30 s on a 5 minute rotation, 5 minutes on a daily one.
+        timer.tolerance = min((interval.duration ?? 0) * 0.1, 5 * 60)
+        // .common so the timer still fires while a menu is tracking.
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
+    }
+
+    private func disarm() {
+        timer?.invalidate()
+        timer = nil
     }
 }
