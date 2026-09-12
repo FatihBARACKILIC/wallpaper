@@ -74,6 +74,8 @@ The menu bar credits the photo on screen and offers two verdicts on it. **Pin th
 
 **Previous wallpaper** (⌘[) steps back through the last 50 wallpapers, and pressing it again keeps walking back rather than bouncing between two photos. **Recent wallpapers** in the menu lists the ones just behind you; **Settings › History** has all three lists in full, with the last 50, the pinned and the blocked on their own shelves.
 
+Every row links to where its photo came from: its page on Unsplash, its day in the NASA APOD archive, or the file itself in Finder.
+
 A wallpaper you pick by hand stays for a full interval, so rotation doesn't wipe your choice off the screen moments later. A downloaded photo whose file has since been evicted is fetched again when you put it back up. Photos from your own folders are used where they lie, so one you have deleted yourself is simply marked as no longer on this Mac — and blocking one only stops the app picking it. Your file is left exactly where it is.
 
 ## Storage

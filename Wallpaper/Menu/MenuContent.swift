@@ -126,25 +126,32 @@ struct MenuContent: View {
             DisclosureGroup("Recent wallpapers") {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(entries) { entry in
-                        Button {
-                            Task { await manager.apply(entry.artwork) }
-                        } label: {
-                            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                                Text(entry.artwork.shortLabel)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                                Spacer(minLength: 4)
-                                Text(entry.date, format: .relative(presentation: .numeric, unitsStyle: .narrow))
-                                    .foregroundStyle(.tertiary)
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Button {
+                                Task { await manager.apply(entry.artwork) }
+                            } label: {
+                                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                    Text(entry.artwork.shortLabel)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                    Spacer(minLength: 4)
+                                    Text(entry.date, format: .relative(presentation: .numeric, unitsStyle: .narrow))
+                                        .foregroundStyle(.tertiary)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
                             }
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .disabled(manager.status == .working)
+
+                            // Not disabled with the rest: looking at where a
+                            // photo came from costs nothing and is worth doing
+                            // while a change is still running.
+                            SourceLink(artwork: entry.artwork)
                         }
-                        .buttonStyle(.link)
                     }
                 }
+                .buttonStyle(.link)
                 .font(.caption)
                 .padding(.top, 4)
-                .disabled(manager.status == .working)
             }
             .font(.callout)
         }

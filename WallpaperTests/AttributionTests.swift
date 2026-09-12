@@ -106,4 +106,35 @@ struct AttributionTests {
             #expect(photo.photographerURL?.path == "/@aleskrivec")
         }
     }
+
+    @Test("A remembered photo's source link is attributed to the name registered now")
+    func sourceLinkFollowsTheCurrentName() throws {
+        // The history keeps `Artwork`s for weeks. One fetched under an older
+        // application name must still link with the name registered today, and
+        // must not end up carrying both.
+        var stored: Artwork?
+        withApplicationName("Old Name") {
+            stored = makeArtwork()
+        }
+        let artwork = try #require(stored)
+
+        withApplicationName("New Name") {
+            let items = parameters(artwork.sourceURL)
+            #expect(items["utm_source"] == "new_name")
+            #expect(items["utm_medium"] == "referral")
+        }
+    }
+
+    @Test("A NASA source link is left exactly as NASA gave it")
+    func nasaSourceLinkIsUntouched() {
+        let artwork = makeAPODArtwork(date: "2020-06-17")
+        // Unsplash's parameters have no business on apod.nasa.gov.
+        #expect(artwork?.sourceURL?.absoluteString == "https://apod.nasa.gov/apod/ap200617.html")
+    }
+
+    @Test("A photo of the user's own has no page to open")
+    func localPhotoHasNoSourceLink() {
+        let artwork = makeLocalArtwork(at: URL(fileURLWithPath: "/Users/me/Pictures/a.jpg"))
+        #expect(artwork.sourceURL == nil)
+    }
 }

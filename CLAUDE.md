@@ -51,6 +51,7 @@ xcodebuild test -project Wallpaper.xcodeproj -scheme Wallpaper -destination 'pla
 
 - Hitting `photo.links.download_location` after using a photo is required by the API guidelines. It counts against the rate limit; the image bytes from the CDN do not. Verified against the live API: it answers `200` with a `{"url": …}` body and drops `X-Ratelimit-Remaining` by one.
 - Attribution is "Photo by <name> on Unsplash", where both the photographer and Unsplash are links. Every outbound Unsplash URL must carry `utm_source` (the user's registered application name) and `utm_medium=referral` — build them with `UnsplashAttribution.link`, never by hand.
+- A *stored* Unsplash link is rebuilt before it is opened, not used as it was saved. `Artwork.webURL` carries the application name that was registered when the photo was fetched, and a photo in the history can outlive that setting by months; `Artwork.sourceURL` runs it back through `UnsplashAttribution.link`, which strips the old parameters before adding the current ones. That is also why applying `link` twice has to stay idempotent.
 - Read `X-Ratelimit-Limit` / `X-Ratelimit-Remaining` from every response and persist them with a timestamp — the gauge must never cost a request to refresh.
 - `/photos/random` filters topics by ID, not slug. `UnsplashClient` resolves a slug once via `/topics/<slug>` and caches the ID in UserDefaults.
 - A collection is identified by a numeric ID, which means nothing to the user. `SourceEditor` resolves the title via `/collections/<id>` when the source is added and stores it on the `Source`, so the lookup happens once.
@@ -79,7 +80,7 @@ Wallpaper/
 ├─ Menu/                 menu bar panel
 ├─ Onboarding/           first-run setup, plus the interval/monitor pickers
 ├─ Settings/             tabbed settings window, plus the uninstall sheet
-├─ Shared/               views used by both setup and settings
+├─ Shared/               views used by more than one scene
 ├─ Assets.xcassets/      AppIcon, generated — see Tools below
 └─ Core/                 Keychain, Settings, Source, UnsplashAttribution,
                          UnsplashClient, ImageCache, PhotoLibrary,

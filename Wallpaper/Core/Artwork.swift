@@ -65,6 +65,20 @@ struct Artwork: Codable, Hashable, Identifiable, Sendable {
     /// photo is a path. Two photos are the same photo when both parts match.
     var key: String { "\(provider.rawValue):\(id)" }
 
+    /// Where this photo came from, ready to open.
+    ///
+    /// An Unsplash link is rebuilt rather than used as stored: `webURL` was
+    /// built with whatever application name was registered when the photo was
+    /// fetched, and the guidelines ask for the one registered *now* — a photo
+    /// remembered in the history can be older than the current setting.
+    /// `UnsplashAttribution.link` strips the old parameters before adding the
+    /// current ones, so re-applying it is safe.
+    var sourceURL: URL? {
+        guard let webURL else { return nil }
+        guard provider == .unsplash else { return webURL }
+        return UnsplashAttribution.link(webURL.absoluteString) ?? webURL
+    }
+
     /// One line naming this photo, for a list row. Falls back through what the
     /// providers actually give: an Unsplash caption or APOD title, then the
     /// photographer, then the provider itself for a public-domain NASA image

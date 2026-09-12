@@ -224,6 +224,10 @@ private struct LibrarySettings: View {
 
             Spacer(minLength: 8)
 
+            // Offered on every shelf, the blocked one included: "what was that
+            // photo I rejected?" is a fair question.
+            SourceLink(artwork: artwork)
+
             if shelf == .blocked {
                 Button("Unblock") { manager.unblock(artwork) }
             } else {
