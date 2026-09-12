@@ -49,7 +49,7 @@ private struct GeneralSettings: View {
                     set: { new in manager.settings.update { $0.pauseOnExpensiveNetwork = new } }
                 ))
             } footer: {
-                Text("Photo folders on this Mac keep rotating, and so do photos already downloaded. New ones wait for Wi-Fi.")
+                Text("Photo folders on this Mac keep rotating, and so do photos already downloaded — only new ones wait for Wi-Fi. macOS spots an iPhone hotspot by itself. An Android one looks like ordinary Wi-Fi, so switch on Low Data Mode for it in System Settings \u{203A} Wi-Fi \u{203A} Details.")
             }
 
             Section {

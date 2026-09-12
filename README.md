@@ -13,7 +13,7 @@ Built to stay out of the way: no Dock icon, no windows unless you open them, and
 - **Works with no key at all** — a setup made only of folders needs no account and no connection
 - **Your own API keys** — stored encrypted in the macOS Keychain, one per service
 - **Flexible schedule** — nine intervals from 5 minutes to 1 week, or manual only
-- **Kind to your data plan** — on cellular or a hotspot it stops downloading, keeps rotating your own folders and photos already saved, and waits for Wi-Fi
+- **Kind to your data plan** — on cellular or a hotspot it stops downloading, keeps rotating your own folders and photos already saved, and waits for Wi-Fi (macOS spots an iPhone hotspot by itself; for an Android one, switch on Low Data Mode for that network)
 - **Multi-monitor** — same photo on every screen, or a different photo per screen
 - **Every desktop** — Spaces you aren't looking at are updated as soon as you switch to them
 - **Skip button** — don't like the current photo? Change it instantly
