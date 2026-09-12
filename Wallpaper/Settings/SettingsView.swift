@@ -44,6 +44,15 @@ private struct GeneralSettings: View {
             }
 
             Section {
+                Toggle("Pause downloads on cellular and hotspots", isOn: Binding(
+                    get: { manager.settings.settings.pauseOnExpensiveNetwork },
+                    set: { new in manager.settings.update { $0.pauseOnExpensiveNetwork = new } }
+                ))
+            } footer: {
+                Text("Photo folders on this Mac keep rotating, and so do photos already downloaded. New ones wait for Wi-Fi.")
+            }
+
+            Section {
                 Toggle("Open at login", isOn: $launchAtLogin)
                     .onChange(of: launchAtLogin) { _, enabled in
                         do {

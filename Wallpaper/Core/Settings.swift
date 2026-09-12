@@ -49,6 +49,15 @@ enum ChangeInterval: Codable, Hashable {
 }
 
 extension Artwork.Provider {
+    /// Whether a change from this provider spends the user's data allowance.
+    /// A folder on this Mac does not: the files are already here.
+    var needsDownload: Bool {
+        switch self {
+        case .unsplash, .apod: true
+        case .local: false
+        }
+    }
+
     /// What one wallpaper change costs this provider in API requests.
     ///
     /// Unsplash is `1 + N`: a single `/photos/random` call fetches the whole
@@ -128,7 +137,41 @@ struct AppSettings: Codable, Hashable {
     var storageLimit = StorageLimit()
     var fadeTransition = true
     var launchAtLogin = false
+    /// Downloading over a hotspot is the user's own data allowance. When this
+    /// is on, a change on an expensive or constrained path uses only what costs
+    /// nothing — a folder on this Mac, or a photo already downloaded.
+    var pauseOnExpensiveNetwork = true
     var hasCompletedOnboarding = false
+
+    init() {}
+
+    /// Decoded field by field so that a stored settings blob written by an
+    /// older build — one that has never heard of a field added since — still
+    /// loads. The synthesized decoder throws `keyNotFound` for a missing key
+    /// even when the property has a default, and `SettingsStore` answers a
+    /// decode failure by falling back to `AppSettings()`: every source, the
+    /// interval and the onboarding flag would be silently wiped. Any field
+    /// added here must be read with `decodeIfPresent`.
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let fallback = AppSettings()
+
+        sources = try container.decodeIfPresent([Source].self, forKey: .sources) ?? fallback.sources
+        applicationName = try container.decodeIfPresent(String.self, forKey: .applicationName)
+            ?? fallback.applicationName
+        interval = try container.decodeIfPresent(ChangeInterval.self, forKey: .interval) ?? fallback.interval
+        monitorMode = try container.decodeIfPresent(MonitorMode.self, forKey: .monitorMode) ?? fallback.monitorMode
+        photoResolution = try container.decodeIfPresent(PhotoResolution.self, forKey: .photoResolution)
+            ?? fallback.photoResolution
+        storageLimit = try container.decodeIfPresent(StorageLimit.self, forKey: .storageLimit)
+            ?? fallback.storageLimit
+        fadeTransition = try container.decodeIfPresent(Bool.self, forKey: .fadeTransition) ?? fallback.fadeTransition
+        launchAtLogin = try container.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? fallback.launchAtLogin
+        pauseOnExpensiveNetwork = try container.decodeIfPresent(Bool.self, forKey: .pauseOnExpensiveNetwork)
+            ?? fallback.pauseOnExpensiveNetwork
+        hasCompletedOnboarding = try container.decodeIfPresent(Bool.self, forKey: .hasCompletedOnboarding)
+            ?? fallback.hasCompletedOnboarding
+    }
 }
 
 /// Single source of truth for user preferences. Preferences live in

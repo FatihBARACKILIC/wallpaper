@@ -271,9 +271,28 @@ final class WallpaperManager {
     /// sources that work. A bad key or an exhausted quota is not source
     /// specific — that is the user's to fix, and it is reported at once.
     private func fetchAndDownload(count: Int) async throws -> [Applied] {
-        let sources = settings.usableSources.shuffled()
+        var sources = settings.usableSources.shuffled()
         guard !sources.isEmpty else {
             throw SetupError.noUsableSources(settings.settings.sources)
+        }
+
+        // On the user's own data allowance, keep only the sources that download
+        // nothing. A folder still rotates normally; if there is none, the throw
+        // sends this through `handleFailure`, which reaches for the cache before
+        // it settles into waiting — the desktop must not freeze for a hotspot
+        // any more than it does for an outage.
+        if settings.settings.pauseOnExpensiveNetwork,
+           let path = await NetworkPath.current(), path.isMetered {
+            let free = sources.filter { !$0.kind.provider.needsDownload }
+            guard !free.isEmpty else {
+                throw path.isExpensive
+                    ? MeteredNetworkError.expensive
+                    : MeteredNetworkError.constrained
+            }
+            Log.wallpaper.info(
+                "metered connection: limited to \(free.count, privacy: .public) source(s) that download nothing"
+            )
+            sources = free
         }
 
         var lastError: (any Error)?
@@ -369,6 +388,29 @@ final class WallpaperManager {
         }
     }
 
+    /// The connection is the user's own data allowance and
+    /// `pauseOnExpensiveNetwork` is on, so nothing may be downloaded. Not a
+    /// failure — a wait, which is why it recovers through `.waitForNetwork`.
+    enum MeteredNetworkError: LocalizedError {
+        case expensive
+        case constrained
+
+        var errorDescription: String? {
+            switch self {
+            case .expensive: "On cellular or a hotspot — waiting for Wi-Fi."
+            case .constrained: "Low Data Mode is on — waiting for a full-speed network."
+            }
+        }
+
+        /// Said instead when a photo already on disk could be shown.
+        var cacheNotice: String {
+            switch self {
+            case .expensive: "On a hotspot — showing a photo you already have."
+            case .constrained: "Low Data Mode — showing a photo you already have."
+            }
+        }
+    }
+
     /// What to do about a failed change. Some failures fix themselves, some
     /// need the user, and waiting a whole interval to find out which is no good
     /// when the interval is a week.
@@ -401,8 +443,13 @@ final class WallpaperManager {
             notice = nil
 
         case .waitForNetwork:
-            status = usedCache ? .idle : .waitingForNetwork("Offline — will retry when the network is back.")
-            notice = usedCache ? "Offline — showing a photo you already have." : nil
+            let metered = error as? MeteredNetworkError
+            status = usedCache
+                ? .idle
+                : .waitingForNetwork(metered?.localizedDescription ?? "Offline — will retry when the network is back.")
+            notice = usedCache
+                ? (metered?.cacheNotice ?? "Offline — showing a photo you already have.")
+                : nil
             startNetworkMonitor()
 
         case .retry(let delay):
@@ -467,6 +514,11 @@ final class WallpaperManager {
 
     private func recovery(for error: any Error) -> Recovery {
         switch error {
+        case is MeteredNetworkError:
+            // Nothing is wrong and nothing will fix itself with time: wait for
+            // the connection to change, which is exactly what the monitor does.
+            return .waitForNetwork
+
         case let error as UnsplashError:
             switch error {
             case .missingAccessKey, .invalidAccessKey, .noPhotosFound:
@@ -559,8 +611,12 @@ final class WallpaperManager {
         let monitor = NWPathMonitor()
         monitor.pathUpdateHandler = { path in
             guard path.status == .satisfied else { return }
+            let snapshot = NetworkPath.Snapshot(path)
             Task { @MainActor [weak self] in
                 guard let self, networkMonitor != nil else { return }
+                // Reconnecting to the same hotspot is not coming back: keep
+                // waiting rather than spending the allowance we just declined.
+                guard !(settings.settings.pauseOnExpensiveNetwork && snapshot.isMetered) else { return }
                 stopNetworkMonitor()
                 await changeWallpaper()
             }
