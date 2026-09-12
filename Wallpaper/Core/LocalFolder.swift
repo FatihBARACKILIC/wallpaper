@@ -3,6 +3,10 @@ import Foundation
 enum LocalFolderError: LocalizedError {
     case unavailable(String)
     case noImages(String)
+    /// Every photo in the folder is one the user asked never to see again.
+    /// Unlike an API source, a fresh draw here is the same files and the same
+    /// verdicts, so retrying would change nothing.
+    case allBlocked(String)
 
     var errorDescription: String? {
         switch self {
@@ -10,6 +14,8 @@ enum LocalFolderError: LocalizedError {
             "The folder \(path) isn't there any more. It may have been moved, renamed, or be on a drive that isn't plugged in."
         case .noImages(let path):
             "No images found in \(path)."
+        case .allBlocked(let path):
+            "Every photo in \(path) is one you asked never to see again. Unblock some in Settings \u{203A} History."
         }
     }
 }
@@ -58,11 +64,27 @@ enum LocalFolder {
     /// Avoids what is already on screen so the desktop visibly changes, but
     /// gives that up rather than returning nothing — a folder holding a single
     /// photo should still work.
-    static func randomArtworks(count: Int, from source: Source, avoiding inUse: Set<URL>) throws -> [Artwork] {
-        let all = try images(in: source.folderURL)
+    ///
+    /// `blocked` holds the `Artwork.key`s of photos the user asked never to see
+    /// again. It is applied before anything else: a blocked photo is not a
+    /// photo this folder can offer, even when it is the only one left.
+    static func randomArtworks(
+        count: Int,
+        from source: Source,
+        avoiding inUse: Set<URL>,
+        blocked: Set<String> = []
+    ) throws -> [Artwork] {
+        let all = try images(in: source.folderURL).map(artwork(for:))
 
-        let fresh = all.filter { !inUse.contains($0.standardizedFileURL) }
-        let pool = fresh.isEmpty ? all : fresh
+        let allowed = blocked.isEmpty ? all : all.filter { !blocked.contains($0.key) }
+        // A folder whose every photo is blocked has nothing to offer. Source
+        // specific, so the next source gets a turn rather than the desktop
+        // freezing — but said in its own words, because "no images found" would
+        // send the user looking for a problem with the folder.
+        guard !allowed.isEmpty else { throw LocalFolderError.allBlocked(source.folderURL.path) }
+
+        let fresh = allowed.filter { !inUse.contains($0.origin.url.standardizedFileURL) }
+        let pool = fresh.isEmpty ? allowed : fresh
 
         var chosen = Array(pool.shuffled().prefix(max(1, count)))
         // Fewer photos in the folder than screens: repeat rather than leave a
@@ -71,7 +93,7 @@ enum LocalFolder {
             chosen.append(first)
         }
 
-        return chosen.map(artwork(for:))
+        return chosen
     }
 
     static func artwork(for file: URL) -> Artwork {

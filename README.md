@@ -17,6 +17,9 @@ Built to stay out of the way: no Dock icon, no windows unless you open them, and
 - **Multi-monitor** — same photo on every screen, or a different photo per screen
 - **Every desktop** — Spaces you aren't looking at are updated as soon as you switch to them
 - **Skip button** — don't like the current photo? Change it instantly
+- **History** — the last 50 wallpapers, with one click to step back to the one before
+- **Pin the ones you like** — a pinned photo is never deleted to make room, and goes back on the desktop whenever you want
+- **Never show again** — a photo you reject is never picked again, from any source, and its download is deleted
 - **Cross-fade** — wallpapers fade into each other instead of snapping; switchable off
 - **Survives interruptions** — a change missed while asleep, offline or shut down happens as soon as it can
 - **Keeps going when a source doesn't** — a source that is out of quota, offline or on an unplugged drive is skipped for one that works; if none work, it rotates through photos you already have
@@ -65,6 +68,14 @@ Folder photos cost no requests and need no connection, and they are used exactly
 
 The first time you pick a folder inside Desktop, Documents or Downloads, macOS asks you to grant access. That is the system's own permission prompt, and the app reads nothing else.
 
+## History, pinning and blocking
+
+The menu bar credits the photo on screen and offers two verdicts on it. **Pin this** keeps it: a pinned photo is never deleted to make room for new ones, and can be put back on the desktop at any time. **Never show again** drops it for good — it is never picked again from any source, not even from the photos already downloaded, and its downloaded copy is deleted. If it was the wallpaper at the time, the wallpaper changes there and then.
+
+**Previous wallpaper** (⌘[) steps back through the last 50 wallpapers, and pressing it again keeps walking back rather than bouncing between two photos. **Recent wallpapers** in the menu lists the ones just behind you; **Settings › History** has all three lists in full, with the last 50, the pinned and the blocked on their own shelves.
+
+A wallpaper you pick by hand stays for a full interval, so rotation doesn't wipe your choice off the screen moments later. A downloaded photo whose file has since been evicted is fetched again when you put it back up. Photos from your own folders are used where they lie, so one you have deleted yourself is simply marked as no longer on this Mac — and blocking one only stops the app picking it. Your file is left exactly where it is.
+
 ## Storage
 
 Photos are cached in `~/Library/Application Support/Wallpaper/Photos`, named like:
@@ -77,13 +88,13 @@ The trailing ID is the Unsplash photo ID, so `unsplash.com/photos/<id>` takes yo
 
 Only downloaded photos are cached. Photos from your own folders are never copied here, so they are never counted towards the limit and never evicted.
 
-By default the cache is capped at 100 photos or 1 GB, whichever comes first, evicting oldest first. You can raise, lower or disable the cap in Settings, and clear the cache at any time.
+By default the cache is capped at 100 photos or 1 GB, whichever comes first, evicting oldest first. You can raise, lower or disable the cap in Settings, and clear the cache at any time. The wallpapers currently on screen and the photos you pinned are never evicted and never cleared — so a long list of pins can keep the folder above the limit, which is the point of pinning.
 
 ## Uninstalling
 
 **Settings › General › Uninstall Wallpaper…** removes everything the app has put on this Mac:
 
-- the cached photos and their index in `~/Library/Application Support/Wallpaper`
+- the cached photos, their index and your history, pins and blocks in `~/Library/Application Support/Wallpaper`
 - settings, sources and the rotation schedule in `~/Library/Preferences`
 - the network caches in `~/Library/Caches` and `~/Library/HTTPStorages`
 - your Unsplash Access Key and NASA API key in the login keychain

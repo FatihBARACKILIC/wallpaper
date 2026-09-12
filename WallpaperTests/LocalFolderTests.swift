@@ -89,6 +89,49 @@ struct LocalFolderTests {
         #expect(picked.allSatisfy { $0.origin.url.lastPathComponent == "only.jpg" })
     }
 
+    @Test("A blocked photo is never picked, even when it is the only fresh one")
+    func skipsBlocked() throws {
+        let folder = TemporaryFolder()
+        defer { folder.cleanUp() }
+
+        let blocked = folder.write("blocked.jpg")
+        folder.write("fine.jpg")
+
+        // The "avoiding" pool is given up when it empties, so a blocked photo
+        // could otherwise slip back in as the last resort.
+        let picked = try LocalFolder.randomArtworks(
+            count: 1,
+            from: .folder(at: folder.url),
+            avoiding: [folder.url.appending(path: "fine.jpg").standardizedFileURL],
+            blocked: [makeLocalArtwork(at: blocked).key]
+        )
+
+        #expect(picked.map(\.origin.url.lastPathComponent) == ["fine.jpg"])
+    }
+
+    @Test("A folder where everything is blocked says so, rather than blaming the folder")
+    func allBlocked() throws {
+        let folder = TemporaryFolder()
+        defer { folder.cleanUp() }
+        let only = folder.write("only.jpg")
+
+        // Source specific, so the next source gets a turn — but "no images
+        // found" would send the user looking for a problem with the folder.
+        let thrown = #expect(throws: LocalFolderError.self) {
+            _ = try LocalFolder.randomArtworks(
+                count: 1,
+                from: .folder(at: folder.url),
+                avoiding: [],
+                blocked: [makeLocalArtwork(at: only).key]
+            )
+        }
+
+        guard case .allBlocked = thrown else {
+            Issue.record("expected allBlocked, got \(String(describing: thrown))")
+            return
+        }
+    }
+
     @Test("Reading a folder never changes it")
     func readOnly() throws {
         // The files belong to the user. Nothing here may copy, rename or delete

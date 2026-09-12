@@ -168,6 +168,87 @@ struct ImageCacheTests {
         #expect(cache.entries().map(\.artwork.id) == [photo.id])
     }
 
+    // MARK: - Finding and forgetting
+
+    @Test("A remembered photo is found again under whatever name it was saved as")
+    func findsRememberedPhoto() async throws {
+        let sandbox = Sandbox()
+        defer { sandbox.cleanUp() }
+
+        let cache = ImageCache(session: stubbedSession(), directory: sandbox.photos)
+        let photo = makeArtwork()
+        let downloaded = try await cache.download(photo, pixelSize: nil)
+
+        // The filename carries the date it was downloaded, so the history
+        // cannot look a photo up by rebuilding its name — only the index knows.
+        #expect(cache.existingFile(for: photo) == downloaded)
+        #expect(cache.existingFile(for: makeArtwork(id: "never-downloaded")) == nil)
+    }
+
+    @Test("A photo whose file has been evicted is not claimed to be on disk")
+    func forgetsEvictedFile() async throws {
+        let sandbox = Sandbox()
+        defer { sandbox.cleanUp() }
+
+        let cache = ImageCache(session: stubbedSession(), directory: sandbox.photos)
+        let photo = makeArtwork()
+        let downloaded = try await cache.download(photo, pixelSize: nil)
+        try FileManager.default.removeItem(at: downloaded)
+
+        // Saying yes here would apply a file that is gone, and blank the desktop.
+        #expect(cache.existingFile(for: photo) == nil)
+    }
+
+    @Test("Never showing a photo again deletes its download")
+    func forgetRemovesTheFile() async throws {
+        let sandbox = Sandbox()
+        defer { sandbox.cleanUp() }
+
+        let cache = ImageCache(session: stubbedSession(), directory: sandbox.photos)
+        let photo = makeArtwork()
+        _ = try await cache.download(photo, pixelSize: nil)
+
+        cache.forget(photo)
+
+        #expect(sandbox.names().isEmpty)
+        // Left in the index it would be an entry that can never be used again.
+        #expect(cache.entries().isEmpty)
+        #expect(cache.existingFile(for: photo) == nil)
+    }
+
+    @Test("Forgetting one photo leaves the others alone")
+    func forgetIsTargeted() async throws {
+        let sandbox = Sandbox()
+        defer { sandbox.cleanUp() }
+
+        let cache = ImageCache(session: stubbedSession(), directory: sandbox.photos)
+        let blocked = makeArtwork(id: "blocked")
+        let kept = makeArtwork(id: "kept")
+        _ = try await cache.download(blocked, pixelSize: nil)
+        _ = try await cache.download(kept, pixelSize: nil)
+
+        cache.forget(blocked)
+
+        #expect(cache.entries().map(\.artwork.id) == ["kept"])
+    }
+
+    @Test("Blocking a photo from the user's own folder never deletes their file")
+    func forgetNeverTouchesUserFiles() {
+        let folder = TemporaryFolder()
+        defer { folder.cleanUp() }
+        let file = folder.write("mine.jpg")
+
+        let sandbox = Sandbox()
+        defer { sandbox.cleanUp() }
+        let cache = ImageCache(session: stubbedSession(), directory: sandbox.photos)
+
+        // "Never show again" means stop picking it — not delete a photo the
+        // app only ever had permission to read.
+        cache.forget(makeLocalArtwork(at: file))
+
+        #expect(FileManager.default.fileExists(atPath: file.path))
+    }
+
     // MARK: - Eviction
 
     @Test("Files that cannot be credited are evicted before older ones that can")

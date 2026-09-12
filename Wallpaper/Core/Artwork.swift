@@ -58,6 +58,21 @@ struct Artwork: Codable, Hashable, Identifiable, Sendable {
     /// Unsplash only: the endpoint that must be hit once the photo is used.
     let downloadLocation: String?
 
+    /// Identity across providers, for the lists that remember photos.
+    ///
+    /// `id` alone will not do: it is unique only *within* a provider, and the
+    /// three namespaces overlap in shape — an APOD entry is a date, a folder
+    /// photo is a path. Two photos are the same photo when both parts match.
+    var key: String { "\(provider.rawValue):\(id)" }
+
+    /// One line naming this photo, for a list row. Falls back through what the
+    /// providers actually give: an Unsplash caption or APOD title, then the
+    /// photographer, then the provider itself for a public-domain NASA image
+    /// with no title at all.
+    var shortLabel: String {
+        title ?? creator ?? provider.displayName
+    }
+
     init(
         id: String,
         provider: Provider,

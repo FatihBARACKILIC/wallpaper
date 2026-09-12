@@ -68,6 +68,15 @@ final class WallpaperManager {
     let nasa: NASAClient
     let cache: ImageCache
     let scheduler: Scheduler
+    /// The last 50 wallpapers, the pinned ones and the blocked ones.
+    let library: PhotoLibrary
+
+    /// Where in the history the wallpaper on screen came from, so "Previous
+    /// wallpaper" keeps walking back instead of bouncing between two photos.
+    ///
+    /// Not persisted: after a relaunch the honest answer is "the top", and a
+    /// stale cursor would start the walk somewhere the user did not leave it.
+    private(set) var historyCursor: Int?
 
     /// Photos already readied for the next change, so applying a wallpaper
     /// touches the disk rather than the network.
@@ -104,13 +113,17 @@ final class WallpaperManager {
         client: UnsplashClient = UnsplashClient(),
         nasa: NASAClient = NASAClient(),
         cache: ImageCache = ImageCache(),
-        scheduler: Scheduler = Scheduler()
+        scheduler: Scheduler = Scheduler(),
+        library: PhotoLibrary? = nil
     ) {
         self.settings = settings
         self.client = client
         self.nasa = nasa
         self.cache = cache
         self.scheduler = scheduler
+        // Derived from the cache rather than worked out a second time, so there
+        // is one answer to where the app's data lives.
+        self.library = library ?? PhotoLibrary(directory: cache.folder.deletingLastPathComponent())
         self.current = Self.restoreCurrent()
     }
 
@@ -256,6 +269,7 @@ final class WallpaperManager {
             try await applyWithTransition(batch.map(\.url))
 
             current = batch
+            remember(batch)
             Log.wallpaper.info("wallpaper changed: \(batch.count, privacy: .public) photo(s)")
             lastChangeDate = Date()
             status = .idle
@@ -343,15 +357,46 @@ final class WallpaperManager {
             // are the user's, so they are used exactly where they lie.
             let inUse = Set(current.map(\.url.standardizedFileURL))
             return try LocalFolder
-                .randomArtworks(count: count, from: source, avoiding: inUse)
+                .randomArtworks(
+                    count: count,
+                    from: source,
+                    avoiding: inUse,
+                    blocked: library.blockedKeys
+                )
                 .map { Applied(artwork: $0, url: $0.origin.url) }
 
         case .apod:
-            return try await downloadAll(nasa.randomArtworks(count: count), count: count)
+            let entries = try await nasa.randomArtworks(count: askFor(count))
+            return try await downloadAll(allowed(entries, from: source), count: count)
 
         case .topic, .collection, .search:
-            return try await downloadAll(client.randomArtworks(count: count, from: source), count: count)
+            let photos = try await client.randomArtworks(count: askFor(count), from: source)
+            return try await downloadAll(allowed(photos, from: source), count: count)
         }
+    }
+
+    /// How many photos to ask an API for.
+    ///
+    /// A blocked photo can turn up in any draw — neither `/photos/random` nor
+    /// APOD knows what the user has rejected — so over-ask when there is a
+    /// block list to filter against. This costs no extra request: both
+    /// providers return the whole batch in one call, and only the photos
+    /// actually used are downloaded and reported.
+    private func askFor(_ needed: Int) -> Int {
+        library.blockedKeys.isEmpty ? needed : needed + 5
+    }
+
+    /// Drops the photos the user asked never to see again.
+    ///
+    /// A draw that was entirely blocked is source specific — the next source
+    /// gets a turn — and, unlike a folder, worth retrying: the next draw from
+    /// an API is a different set of photos.
+    private func allowed(_ artworks: [Artwork], from source: Source) throws -> [Artwork] {
+        guard !library.blockedKeys.isEmpty else { return artworks }
+
+        let kept = artworks.filter { !library.isBlocked($0) }
+        guard !kept.isEmpty else { throw PickError.everythingBlocked(source) }
+        return kept
     }
 
     private func downloadAll(_ artworks: [Artwork], count: Int) async throws -> [Applied] {
@@ -367,6 +412,7 @@ final class WallpaperManager {
     /// misconfigured" or "the network is down".
     private static func isSourceSpecific(_ error: any Error) -> Bool {
         if error is LocalFolderError { return true }
+        if error is PickError { return true }
         if case .noPhotosFound = error as? UnsplashError { return true }
         if case .noPhotosFound = error as? NASAError { return true }
         return false
@@ -391,6 +437,149 @@ final class WallpaperManager {
         }
     }
 
+    // MARK: - History, pins and blocks
+
+    /// Writes what has just gone up into the history and puts the walk-back
+    /// cursor past it, so the first step back goes to the photo *before* this
+    /// change rather than to one that is on screen right now.
+    ///
+    /// In per-screen mode one change puts up several photos, and all of them
+    /// are now at the front of the list — stepping back means the change
+    /// before this one, not the photo on the next display.
+    private func remember(_ batch: [Applied]) {
+        library.record(batch.map(\.artwork))
+        historyCursor = max(0, batch.count - 1)
+    }
+
+    /// Whether there is anything further back to go to.
+    var canGoBack: Bool { library.entry(before: historyCursor) != nil }
+
+    /// Walks one step back through the history and puts that photo up. Called
+    /// again, it keeps walking rather than bouncing between two photos.
+    ///
+    /// An entry that cannot be produced any more — one of the user's own files
+    /// that they have since deleted — is stepped over rather than reported:
+    /// the button means "show me the one before", and stopping on a gap would
+    /// strand the walk.
+    func goBack() async {
+        // Without this the walk would step over every entry in turn, since
+        // `apply` refuses them all while a change is in flight.
+        guard !isChanging else { return }
+
+        var cursor = historyCursor
+        while let (index, entry) = library.entry(before: cursor) {
+            if await apply(entry.artwork, at: index) { return }
+            cursor = index
+        }
+        notice = "Those earlier wallpapers aren't available any more."
+    }
+
+    /// Puts one remembered photo back up, and keeps it there for a full
+    /// interval.
+    ///
+    /// It goes on every screen even in per-screen mode: the user picked one
+    /// photo, and there is no basis for deciding which display should get it.
+    /// Per-screen resumes at the next rotation.
+    ///
+    /// Returns whether it worked, which is what lets `goBack` step over a gap.
+    @discardableResult
+    func apply(_ artwork: Artwork, at cursor: Int? = nil) async -> Bool {
+        guard !isChanging else { return false }
+        isChanging = true
+        defer { isChanging = false }
+
+        cancelRetry()
+        status = .working
+
+        do {
+            let resolved = try await resolve(artwork)
+            try await applyWithTransition([resolved.url])
+
+            current = [Applied(artwork: artwork, url: resolved.url)]
+            historyCursor = cursor ?? library.index(of: artwork)
+            lastChangeDate = Date()
+            status = .idle
+            notice = nil
+            Log.wallpaper.info("re-applied \(artwork.key, privacy: .public)")
+
+            // Rotation carrying on as scheduled would wipe the user's own
+            // choice off the screen moments later.
+            scheduler.postpone()
+
+            // Reported only when bytes actually came down. A file that was
+            // still on disk was reported the first time it was used.
+            if resolved.downloaded {
+                await client.reportDownload(for: artwork)
+            }
+            housekeep()
+            return true
+        } catch {
+            Log.wallpaper.info(
+                "could not re-apply \(artwork.key, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+            status = .idle
+            return false
+        }
+    }
+
+    /// Where a remembered photo's bytes are now.
+    ///
+    /// The library is kept in `Artwork` terms precisely because the file may be
+    /// gone: a download that has since been evicted is fetched again, while one
+    /// of the user's own files is used where it lies — and if they deleted it,
+    /// nothing can bring it back.
+    private func resolve(_ artwork: Artwork) async throws -> (url: URL, downloaded: Bool) {
+        if case .localFile(let url) = artwork.origin {
+            guard FileManager.default.fileExists(atPath: url.path) else {
+                throw PickError.fileGone(artwork)
+            }
+            return (url, false)
+        }
+
+        if let existing = cache.existingFile(for: artwork) {
+            return (existing, false)
+        }
+
+        return (try await cache.download(artwork, pixelSize: downloadSize(forScreenAt: 0)), true)
+    }
+
+    /// Pins or unpins a photo. The cache is re-checked either way: a file it
+    /// was free to evict a moment ago is now one it has to keep, and the other
+    /// way round.
+    func toggleFavorite(_ artwork: Artwork) {
+        library.toggleFavorite(artwork)
+        housekeep()
+    }
+
+    /// "Never show again."
+    ///
+    /// Blocking has to act now, not at the next change: the photo the user just
+    /// rejected is usually the one on screen, and the one queued up behind it.
+    func block(_ artwork: Artwork) async {
+        library.block(artwork)
+
+        // A blocked photo sitting in the queue would be the very next thing on
+        // the desktop.
+        prefetched.removeAll { $0.artwork.key == artwork.key }
+
+        if current.contains(where: { $0.artwork.key == artwork.key }) {
+            await changeNow()
+        }
+
+        // Only once it is off the screen — deleting the file while it is still
+        // the wallpaper would leave the desktop pointing at nothing. A photo
+        // from the user's own folder is not the app's to delete; `forget`
+        // refuses those.
+        if !current.contains(where: { $0.artwork.key == artwork.key }) {
+            cache.forget(artwork)
+        }
+        prefetchNext()
+    }
+
+    func unblock(_ artwork: Artwork) {
+        library.unblock(artwork)
+    }
+
     // MARK: - Failure recovery
 
     /// The app is configured, but not in a way it can act on.
@@ -410,6 +599,27 @@ final class WallpaperManager {
                 default:
                     "Your Unsplash sources need an Access Key. Add one in Settings."
                 }
+            }
+        }
+    }
+
+    /// A source offered photos, but not ones that could be used.
+    enum PickError: LocalizedError {
+        /// Every photo in the draw was on the user's "never show again" list.
+        /// The default recovery — retry with backoff — is the right one: the
+        /// next draw from an API is a different set of photos.
+        case everythingBlocked(Source)
+        /// A remembered photo whose file the user has since deleted. Only a
+        /// photo from one of their own folders can be lost this way; a
+        /// downloaded one is fetched again.
+        case fileGone(Artwork)
+
+        var errorDescription: String? {
+            switch self {
+            case .everythingBlocked(let source):
+                "Every photo \(source.shortLabel) offered is one you asked never to see again."
+            case .fileGone(let artwork):
+                "\(artwork.shortLabel) isn't on this Mac any more."
             }
         }
     }
@@ -511,7 +721,11 @@ final class WallpaperManager {
     /// back to, which leaves the current wallpaper alone.
     private func applyFromCache() async -> Bool {
         let inUse = Set(current.map(\.url.standardizedFileURL))
-        let candidates = cache.entries().filter { !inUse.contains($0.url.standardizedFileURL) }
+        // "Never show again" holds here too: the disk is not an excuse to put
+        // back a photo the user rejected.
+        let candidates = cache.entries().filter {
+            !inUse.contains($0.url.standardizedFileURL) && !library.isBlocked($0.artwork)
+        }
         guard !candidates.isEmpty else {
             Log.wallpaper.debug("no cached photo to fall back to")
             return false
@@ -531,6 +745,7 @@ final class WallpaperManager {
         }
 
         current = chosen.map { Applied(artwork: $0.artwork, url: $0.url) }
+        remember(current)
         lastChangeDate = Date()
         // No download is reported: nothing was downloaded, and the photo was
         // already reported the first time it was used.
@@ -818,12 +1033,22 @@ final class WallpaperManager {
             : 1
     }
 
-    /// Files that must survive eviction: what is on screen now, and what is
-    /// queued for the next change.
+    /// Files that must survive eviction: what is on screen now, what is queued
+    /// for the next change, and what the user pinned.
     private var pinnedURLs: Set<URL> {
         WallpaperSetter.currentWallpaperURLs()
             .union(prefetched.map(\.url))
             .union(current.map(\.url))
+            .union(favoriteURLs)
+    }
+
+    /// The cached files behind the pinned photos.
+    ///
+    /// Pinning means "keep this", and eviction has to honour it — so a long pin
+    /// list can hold the folder above the storage limit. That is the right way
+    /// round: the alternative is deleting a photo the user asked to keep.
+    private var favoriteURLs: Set<URL> {
+        Set(library.favorites.compactMap { cache.existingFile(for: $0.artwork) })
     }
 
     private func housekeep() {

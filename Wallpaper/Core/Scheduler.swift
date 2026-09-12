@@ -73,6 +73,17 @@ final class Scheduler {
         await fire()
     }
 
+    /// Pushes the next change a full interval out without firing one.
+    ///
+    /// For a wallpaper the user chose by hand — one picked out of the history
+    /// or the favourites. Rotation carrying on regardless would wipe their
+    /// choice off the screen seconds later, which is not what picking a photo
+    /// means. Does nothing on `.manual`: there is no interval to push out.
+    func postpone() {
+        guard let duration = interval.duration else { return }
+        scheduleNext(after: duration)
+    }
+
     /// Fires immediately if the scheduled change came due while the app was not
     /// running, or while the Mac was asleep. Call once at launch and on wake.
     func fireIfOverdue() async {

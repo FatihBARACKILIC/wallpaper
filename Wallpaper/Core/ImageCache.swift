@@ -88,6 +88,39 @@ final class ImageCache {
         }
     }
 
+    /// The cached file for one photo, if it is still on disk.
+    ///
+    /// Found through the index rather than by rebuilding the filename: the name
+    /// carries the date the photo was downloaded, so the same photo fetched
+    /// again next week is a different filename. A photo remembered in the
+    /// history or pinned as a favourite has to be recognised whatever day it
+    /// arrived.
+    func existingFile(for artwork: Artwork) -> URL? {
+        guard case .remote = artwork.origin else { return nil }
+
+        return index.first { $0.value.key == artwork.key }.flatMap { filename, _ in
+            let url = directory.appending(path: filename)
+            return fileManager.fileExists(atPath: url.path) ? url : nil
+        }
+    }
+
+    /// Deletes a downloaded photo and forgets it, so "never show again" does
+    /// not leave the file sitting in the cache taking up the user's storage
+    /// limit.
+    ///
+    /// A photo from one of the user's own folders is not the app's to delete,
+    /// and is not in the cache to begin with — it leaves here untouched.
+    func forget(_ artwork: Artwork) {
+        guard case .remote = artwork.origin else { return }
+
+        for (filename, entry) in index where entry.key == artwork.key {
+            try? fileManager.removeItem(at: directory.appending(path: filename))
+            index[filename] = nil
+        }
+        saveIndex()
+        refreshStats()
+    }
+
     /// Forgets index entries whose file is gone, so the index cannot outgrow
     /// the folder it describes.
     private func pruneIndex() {

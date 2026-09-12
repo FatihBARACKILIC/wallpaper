@@ -21,6 +21,7 @@ struct MenuContent: View {
                 currentPhoto
                 Divider()
                 actions
+                recent
                 quotas
             } else {
                 setupPrompt
@@ -75,9 +76,77 @@ struct MenuContent: View {
                                 .foregroundStyle(.tertiary)
                         }
                         attribution(for: artwork)
+                        verdict(for: artwork)
                     }
                 }
             }
+        }
+    }
+
+    /// The two things the user can say about the photo in front of them: keep
+    /// it, or never see it again. Both are per photo rather than per change —
+    /// in per-screen mode only one of the displays may be the offender.
+    private func verdict(for artwork: Artwork) -> some View {
+        let isPinned = manager.library.isFavorite(artwork)
+
+        return HStack(spacing: 12) {
+            Button {
+                manager.toggleFavorite(artwork)
+            } label: {
+                Label(isPinned ? "Pinned" : "Pin this", systemImage: isPinned ? "pin.fill" : "pin")
+            }
+            .help(isPinned
+                  ? "Pinned: this photo is never deleted to make room, and you can put it back any time."
+                  : "Keep this photo. It is never deleted to make room, and you can put it back any time.")
+
+            Button {
+                Task { await manager.block(artwork) }
+            } label: {
+                Label("Never show again", systemImage: "hand.raised")
+            }
+            .help("Never pick this photo again, and change the wallpaper now.")
+        }
+        .buttonStyle(.link)
+        .font(.caption)
+        .padding(.top, 2)
+        .disabled(manager.status == .working)
+    }
+
+    /// The wallpapers before this one, newest first. Collapsed by default: the
+    /// menu is mostly opened to see who took the photo on screen, not to browse.
+    @ViewBuilder
+    private var recent: some View {
+        // Whatever is on screen is not something to go back to, and it is
+        // credited a few lines above already.
+        let onScreen = Set(manager.currentArtworks.map(\.key))
+        let entries = manager.library.history.filter { !onScreen.contains($0.id) }.prefix(8)
+
+        if !entries.isEmpty {
+            Divider()
+            DisclosureGroup("Recent wallpapers") {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(entries) { entry in
+                        Button {
+                            Task { await manager.apply(entry.artwork) }
+                        } label: {
+                            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                Text(entry.artwork.shortLabel)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                Spacer(minLength: 4)
+                                Text(entry.date, format: .relative(presentation: .numeric, unitsStyle: .narrow))
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(.link)
+                    }
+                }
+                .font(.caption)
+                .padding(.top, 4)
+                .disabled(manager.status == .working)
+            }
+            .font(.callout)
         }
     }
 
@@ -191,6 +260,15 @@ struct MenuContent: View {
             }
             .keyboardShortcut("r")
             .disabled(manager.status == .working)
+
+            Button {
+                Task { await manager.goBack() }
+            } label: {
+                Label("Previous wallpaper", systemImage: "arrow.uturn.backward")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .keyboardShortcut("[")
+            .disabled(manager.status == .working || !manager.canGoBack)
 
             Text(nextChangeDescription)
                 .font(.caption)
