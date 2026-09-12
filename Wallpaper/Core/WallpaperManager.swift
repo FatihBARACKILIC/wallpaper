@@ -71,7 +71,14 @@ final class WallpaperManager {
 
     /// Photos already readied for the next change, so applying a wallpaper
     /// touches the disk rather than the network.
-    private var prefetched: [Applied] = []
+    ///
+    /// Persisted, because it used to be lost on quit: `start()` fires an
+    /// overdue change *before* it prefetches, so the first change after every
+    /// launch went to the network — and on a long interval that is the only
+    /// change the user ever sees.
+    private var prefetched: [Applied] = WallpaperManager.restorePrefetched() {
+        didSet { persistPrefetched() }
+    }
     private var prefetchTask: Task<Void, Never>?
 
     /// Guards against two changes overlapping — they would race on `current`
@@ -124,6 +131,25 @@ final class WallpaperManager {
     private func persistCurrent() {
         guard let data = try? JSONEncoder().encode(current) else { return }
         UserDefaults.standard.set(data, forKey: Self.currentKey)
+    }
+
+    private static let prefetchedKey = "prefetchedWallpapers"
+
+    /// Checks every file, not just the ones from a user folder the way
+    /// `stillExists` does. While the app runs, a queued cache file is pinned
+    /// against eviction; across a quit nothing pins it, so the only honest
+    /// answer is to look at the disk.
+    private static func restorePrefetched() -> [Applied] {
+        guard let data = UserDefaults.standard.data(forKey: prefetchedKey),
+              let decoded = try? JSONDecoder().decode([Applied].self, from: data)
+        else { return [] }
+
+        return decoded.filter { FileManager.default.fileExists(atPath: $0.url.path) }
+    }
+
+    private func persistPrefetched() {
+        guard let data = try? JSONEncoder().encode(prefetched) else { return }
+        UserDefaults.standard.set(data, forKey: Self.prefetchedKey)
     }
 
     /// Ready means at least one source can actually be drawn from right now.
