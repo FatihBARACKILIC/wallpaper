@@ -252,7 +252,7 @@ struct ImageCacheTests {
     // MARK: - Eviction
 
     @Test("Files that cannot be credited are evicted before older ones that can")
-    func unattributableFilesGoFirst() {
+    func unattributableFilesGoFirst() async {
         let sandbox = Sandbox()
         defer { sandbox.cleanUp() }
 
@@ -262,7 +262,7 @@ struct ImageCacheTests {
         sandbox.writeIndex(["indexed.jpg": makeArtwork()])
 
         let cache = ImageCache(session: stubbedSession(), directory: sandbox.photos)
-        cache.enforce(StorageLimit(isEnabled: true, maxPhotos: 1, maxBytes: .max), pinned: [])
+        await cache.enforce(StorageLimit(isEnabled: true, maxPhotos: 1, maxBytes: .max), pinned: [])
 
         // Without an index entry the photographer cannot be credited, so the
         // file can never be re-used — keeping it would crowd out one that can.
@@ -270,7 +270,7 @@ struct ImageCacheTests {
     }
 
     @Test("Among files that can be credited, the oldest goes first")
-    func oldestGoesFirst() {
+    func oldestGoesFirst() async {
         let sandbox = Sandbox()
         defer { sandbox.cleanUp() }
 
@@ -279,13 +279,13 @@ struct ImageCacheTests {
         sandbox.writeIndex(["old.jpg": makeArtwork(id: "old"), "new.jpg": makeArtwork(id: "new")])
 
         let cache = ImageCache(session: stubbedSession(), directory: sandbox.photos)
-        cache.enforce(StorageLimit(isEnabled: true, maxPhotos: 1, maxBytes: .max), pinned: [])
+        await cache.enforce(StorageLimit(isEnabled: true, maxPhotos: 1, maxBytes: .max), pinned: [])
 
         #expect(sandbox.names() == ["new.jpg"])
     }
 
     @Test("The wallpapers on screen are never evicted")
-    func pinnedFilesSurvive() {
+    func pinnedFilesSurvive() async {
         let sandbox = Sandbox()
         defer { sandbox.cleanUp() }
 
@@ -295,14 +295,14 @@ struct ImageCacheTests {
 
         let cache = ImageCache(session: stubbedSession(), directory: sandbox.photos)
         let pinned = sandbox.photos.appending(path: "old.jpg")
-        cache.enforce(StorageLimit(isEnabled: true, maxPhotos: 1, maxBytes: .max), pinned: [pinned])
+        await cache.enforce(StorageLimit(isEnabled: true, maxPhotos: 1, maxBytes: .max), pinned: [pinned])
 
         // "old.jpg" would have gone first on age, but it is on screen.
         #expect(sandbox.names() == ["old.jpg"])
     }
 
     @Test("The byte limit evicts even when the photo count is fine")
-    func byteLimitEvicts() {
+    func byteLimitEvicts() async {
         let sandbox = Sandbox()
         defer { sandbox.cleanUp() }
 
@@ -311,27 +311,27 @@ struct ImageCacheTests {
         sandbox.writeIndex(["old.jpg": makeArtwork(id: "old"), "new.jpg": makeArtwork(id: "new")])
 
         let cache = ImageCache(session: stubbedSession(), directory: sandbox.photos)
-        cache.enforce(StorageLimit(isEnabled: true, maxPhotos: 100, maxBytes: 5000), pinned: [])
+        await cache.enforce(StorageLimit(isEnabled: true, maxPhotos: 100, maxBytes: 5000), pinned: [])
 
         #expect(sandbox.names() == ["new.jpg"])
     }
 
     @Test("A disabled limit keeps everything")
-    func disabledLimitKeepsEverything() {
+    func disabledLimitKeepsEverything() async {
         let sandbox = Sandbox()
         defer { sandbox.cleanUp() }
 
         for index in 0..<5 { sandbox.writePhoto("photo-\(index).jpg") }
 
         let cache = ImageCache(session: stubbedSession(), directory: sandbox.photos)
-        cache.enforce(.unlimited, pinned: [])
+        await cache.enforce(.unlimited, pinned: [])
 
         #expect(sandbox.names().count == 5)
         #expect(cache.stats.count == 5)
     }
 
     @Test("Evicting forgets the index entries of the files it removed")
-    func evictionPrunesIndex() {
+    func evictionPrunesIndex() async {
         let sandbox = Sandbox()
         defer { sandbox.cleanUp() }
 
@@ -340,7 +340,7 @@ struct ImageCacheTests {
         sandbox.writeIndex(["old.jpg": makeArtwork(id: "old"), "new.jpg": makeArtwork(id: "new")])
 
         let cache = ImageCache(session: stubbedSession(), directory: sandbox.photos)
-        cache.enforce(StorageLimit(isEnabled: true, maxPhotos: 1, maxBytes: .max), pinned: [])
+        await cache.enforce(StorageLimit(isEnabled: true, maxPhotos: 1, maxBytes: .max), pinned: [])
 
         #expect(cache.entries().map(\.artwork.id) == ["new"])
     }
@@ -348,7 +348,7 @@ struct ImageCacheTests {
     // MARK: - Clearing
 
     @Test("Deleting the cache keeps the wallpapers on screen")
-    func clearKeepsPinned() {
+    func clearKeepsPinned() async {
         let sandbox = Sandbox()
         defer { sandbox.cleanUp() }
 
@@ -357,14 +357,14 @@ struct ImageCacheTests {
         sandbox.writePhoto("c.jpg")
 
         let cache = ImageCache(session: stubbedSession(), directory: sandbox.photos)
-        cache.clear(keeping: [sandbox.photos.appending(path: "b.jpg")])
+        await cache.clear(keeping: [sandbox.photos.appending(path: "b.jpg")])
 
         #expect(sandbox.names() == ["b.jpg"])
         #expect(cache.stats.count == 1)
     }
 
     @Test("Stats report what is actually on disk")
-    func statsReflectDisk() {
+    func statsReflectDisk() async {
         let sandbox = Sandbox()
         defer { sandbox.cleanUp() }
 
@@ -372,7 +372,7 @@ struct ImageCacheTests {
         sandbox.writePhoto("b.jpg", bytes: 1024)
 
         let cache = ImageCache(session: stubbedSession(), directory: sandbox.photos)
-        cache.enforce(.unlimited, pinned: [])
+        await cache.enforce(.unlimited, pinned: [])
 
         #expect(cache.stats.count == 2)
         #expect(cache.stats.bytes == 3072)

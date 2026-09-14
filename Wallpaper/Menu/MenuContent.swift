@@ -8,13 +8,6 @@ struct MenuContent: View {
     @Environment(\.openSettings) private var openSettings
     @Environment(\.openWindow) private var openWindow
 
-    /// The countdown is relative to *now*, and "now" is not something SwiftUI
-    /// observes — `nextChangeDate` only moves once an interval, so without a
-    /// tick the text freezes at whatever it read when the menu opened. The tick
-    /// is driven by `.task`, so it is cancelled with the view and a closed menu
-    /// still costs nothing.
-    @State private var now = Date()
-
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if manager.isReady {
@@ -48,12 +41,6 @@ struct MenuContent: View {
         }
         .padding(12)
         .frame(width: 300)
-        .task {
-            while !Task.isCancelled {
-                now = Date()
-                try? await Task.sleep(for: .seconds(1))
-            }
-        }
     }
 
     // MARK: - Sections
@@ -304,9 +291,10 @@ struct MenuContent: View {
             .keyboardShortcut("[")
             .disabled(manager.status == .working || !manager.canGoBack)
 
-            Text(nextChangeDescription)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            NextChangeLabel(
+                nextChangeDate: manager.scheduler.nextChangeDate,
+                isChanging: manager.status == .working
+            )
 
             if let sky = manager.currentSunlight {
                 Label(skyDescription(sky), systemImage: skySymbol(sky))
@@ -357,7 +345,7 @@ struct MenuContent: View {
         guard !manager.settings.settings.sources.isEmpty else {
             return "Add a source to start rotating wallpapers — an Unsplash topic, a Wallhaven search, a folder of your own photos, or NASA's picture of the day."
         }
-        return WallpaperManager.SetupError
+        return SetupError
             .noUsableSources(manager.settings.settings.sources)
             .localizedDescription
     }
@@ -385,16 +373,4 @@ struct MenuContent: View {
         return false
     }
 
-    private var nextChangeDescription: String {
-        if manager.status == .working { return "Changing…" }
-        guard let next = manager.scheduler.nextChangeDate else { return "Changes manually only" }
-
-        // A due date in the past means the change is on its way in — saying
-        // "5 minutes ago" for the *next* change reads as a stuck clock.
-        guard next.timeIntervalSince(now) > 0 else { return "Next change any moment now" }
-
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .full
-        return "Next change \(formatter.localizedString(for: next, relativeTo: now))"
-    }
 }

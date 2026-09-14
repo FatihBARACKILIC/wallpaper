@@ -4,7 +4,7 @@ import Foundation
 
 /// Unsplash's own JSON shape. It stops at the edge of the client: everything
 /// past `randomArtworks` deals in `Artwork`.
-struct Photo: Codable, Hashable, Identifiable, Sendable {
+nonisolated struct Photo: Codable, Hashable, Identifiable, Sendable {
     struct URLs: Codable, Hashable, Sendable {
         let raw: String
         let full: String
@@ -297,5 +297,5 @@ final class UnsplashClient {
 // MARK: - Helpers
 
 extension String {
-    var nilIfEmpty: String? { isEmpty ? nil : self }
+    nonisolated var nilIfEmpty: String? { isEmpty ? nil : self }
 }

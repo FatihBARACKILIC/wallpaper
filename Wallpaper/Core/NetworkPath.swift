@@ -8,7 +8,9 @@ import Network
 /// app with nothing running. That is the same rule the offline monitor follows
 /// — it exists only while there is something to wait for.
 enum NetworkPath {
-    struct Snapshot: Sendable, Hashable {
+    /// `nonisolated`: it is read inside the path monitor's own callback, which
+    /// arrives on a background queue.
+    nonisolated struct Snapshot: Sendable, Hashable {
         var isSatisfied: Bool
         /// Cellular, or a phone's Personal Hotspot.
         var isExpensive: Bool

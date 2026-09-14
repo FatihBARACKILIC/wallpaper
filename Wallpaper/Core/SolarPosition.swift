@@ -2,7 +2,7 @@ import Foundation
 
 /// Where on Earth the user is. Two numbers, and nothing else — the app has no
 /// use for an address and never asks for one.
-struct GeoCoordinate: Codable, Hashable, Sendable {
+nonisolated struct GeoCoordinate: Codable, Hashable, Sendable {
     var latitude: Double
     var longitude: Double
 
@@ -23,7 +23,7 @@ struct GeoCoordinate: Codable, Hashable, Sendable {
 }
 
 /// How much daylight there is, in the only three words worth saying about it.
-enum SolarPhase: String, Sendable {
+nonisolated enum SolarPhase: String, Sendable {
     case night
     case twilight
     case day
@@ -39,7 +39,7 @@ enum SolarPhase: String, Sendable {
 
 /// The state of the sky at one place and moment, and the brightness of photo
 /// that suits it.
-struct Sunlight: Hashable, Sendable {
+nonisolated struct Sunlight: Hashable, Sendable {
     /// The sun's altitude above the horizon, in degrees. Negative after dark.
     let elevation: Double
 

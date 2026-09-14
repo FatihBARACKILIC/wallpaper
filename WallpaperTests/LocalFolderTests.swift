@@ -59,14 +59,14 @@ struct LocalFolderTests {
     }
 
     @Test("The photo on screen is avoided, so the wallpaper visibly changes")
-    func avoidsWhatIsOnScreen() throws {
+    func avoidsWhatIsOnScreen() async throws {
         let folder = TemporaryFolder()
         defer { folder.cleanUp() }
 
         let a = folder.write("a.jpg")
         folder.write("b.jpg")
 
-        let picked = try LocalFolder.randomArtworks(
+        let picked = try await LocalFolder.randomArtworks(
             count: 1,
             from: .folder(at: folder.url),
             avoiding: [a.standardizedFileURL]
@@ -75,13 +75,13 @@ struct LocalFolderTests {
     }
 
     @Test("A folder holding one photo still works")
-    func singlePhotoFolder() throws {
+    func singlePhotoFolder() async throws {
         // Avoiding what is on screen is given up rather than returning nothing.
         let folder = TemporaryFolder()
         defer { folder.cleanUp() }
         let only = folder.write("only.jpg")
 
-        let picked = try LocalFolder.randomArtworks(
+        let picked = try await LocalFolder.randomArtworks(
             count: 2,
             from: .folder(at: folder.url),
             avoiding: [only.standardizedFileURL]
@@ -91,7 +91,7 @@ struct LocalFolderTests {
     }
 
     @Test("A blocked photo is never picked, even when it is the only fresh one")
-    func skipsBlocked() throws {
+    func skipsBlocked() async throws {
         let folder = TemporaryFolder()
         defer { folder.cleanUp() }
 
@@ -100,7 +100,7 @@ struct LocalFolderTests {
 
         // The "avoiding" pool is given up when it empties, so a blocked photo
         // could otherwise slip back in as the last resort.
-        let picked = try LocalFolder.randomArtworks(
+        let picked = try await LocalFolder.randomArtworks(
             count: 1,
             from: .folder(at: folder.url),
             avoiding: [folder.url.appending(path: "fine.jpg").standardizedFileURL],
@@ -111,15 +111,15 @@ struct LocalFolderTests {
     }
 
     @Test("A folder where everything is blocked says so, rather than blaming the folder")
-    func allBlocked() throws {
+    func allBlocked() async throws {
         let folder = TemporaryFolder()
         defer { folder.cleanUp() }
         let only = folder.write("only.jpg")
 
         // Source specific, so the next source gets a turn — but "no images
         // found" would send the user looking for a problem with the folder.
-        let thrown = #expect(throws: LocalFolderError.self) {
-            _ = try LocalFolder.randomArtworks(
+        let thrown = await #expect(throws: LocalFolderError.self) {
+            _ = try await LocalFolder.randomArtworks(
                 count: 1,
                 from: .folder(at: folder.url),
                 avoiding: [],
@@ -134,7 +134,7 @@ struct LocalFolderTests {
     }
 
     @Test("Reading a folder never changes it")
-    func readOnly() throws {
+    func readOnly() async throws {
         // The files belong to the user. Nothing here may copy, rename or delete
         // one, so the folder must look identical afterwards.
         let folder = TemporaryFolder()
@@ -143,7 +143,7 @@ struct LocalFolderTests {
         folder.write("b.jpg")
 
         let before = try FileManager.default.contentsOfDirectory(atPath: folder.url.path).sorted()
-        _ = try LocalFolder.randomArtworks(count: 2, from: .folder(at: folder.url), avoiding: [])
+        _ = try await LocalFolder.randomArtworks(count: 2, from: .folder(at: folder.url), avoiding: [])
         let after = try FileManager.default.contentsOfDirectory(atPath: folder.url.path).sorted()
 
         #expect(before == after)
@@ -201,7 +201,7 @@ struct LocalFolderTests {
     }
 
     @Test("A folder of phone photos offers its landscape ones first")
-    func prefersPhotosThatFitTheScreen() throws {
+    func prefersPhotosThatFitTheScreen() async throws {
         let folder = TemporaryFolder()
         defer { folder.cleanUp() }
 
@@ -213,7 +213,7 @@ struct LocalFolderTests {
             writePNG(width: 160, height: 90, to: folder.url.appending(path: "landscape\(index).png"))
         }
 
-        let picked = try LocalFolder.randomArtworks(
+        let picked = try await LocalFolder.randomArtworks(
             count: 3,
             from: .folder(at: folder.url),
             avoiding: [],
@@ -225,7 +225,7 @@ struct LocalFolderTests {
     }
 
     @Test("It is a preference, not a filter — a folder of only portraits still works")
-    func neverDropsThePhotosItHas() throws {
+    func neverDropsThePhotosItHas() async throws {
         let folder = TemporaryFolder()
         defer { folder.cleanUp() }
 
@@ -233,7 +233,7 @@ struct LocalFolderTests {
             writePNG(width: 90, height: 160, to: folder.url.appending(path: "portrait\(index).png"))
         }
 
-        let picked = try LocalFolder.randomArtworks(
+        let picked = try await LocalFolder.randomArtworks(
             count: 3,
             from: .folder(at: folder.url),
             avoiding: [],
@@ -243,7 +243,7 @@ struct LocalFolderTests {
     }
 
     @Test("A file whose size cannot be read is sorted last, not thrown away")
-    func unreadableSizesSurvive() throws {
+    func unreadableSizesSurvive() async throws {
         let folder = TemporaryFolder()
         defer { folder.cleanUp() }
 
@@ -252,7 +252,7 @@ struct LocalFolderTests {
         for index in 0..<6 { folder.write("broken\(index).jpg") }
         writePNG(width: 160, height: 90, to: folder.url.appending(path: "real.png"))
 
-        let picked = try LocalFolder.randomArtworks(
+        let picked = try await LocalFolder.randomArtworks(
             count: 4,
             from: .folder(at: folder.url),
             avoiding: [],
@@ -266,14 +266,14 @@ struct LocalFolderTests {
     }
 
     @Test("With no screen to fit, the draw is left alone")
-    func noRatioChangesNothing() throws {
+    func noRatioChangesNothing() async throws {
         let folder = TemporaryFolder()
         defer { folder.cleanUp() }
         for index in 0..<10 {
             writePNG(width: 90, height: 160, to: folder.url.appending(path: "p\(index).png"))
         }
 
-        let picked = try LocalFolder.randomArtworks(
+        let picked = try await LocalFolder.randomArtworks(
             count: 3, from: .folder(at: folder.url), avoiding: []
         )
         #expect(picked.count == 3)

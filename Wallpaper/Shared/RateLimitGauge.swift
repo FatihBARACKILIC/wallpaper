@@ -56,10 +56,16 @@ struct RateLimitGauge: View {
             return "Quota has reset since the last request."
         }
 
-        let age = RelativeDateTimeFormatter()
-        age.unitsStyle = .full
-        let observed = age.localizedString(for: rateLimit.observedAt, relativeTo: Date())
+        let observed = Self.age.localizedString(for: rateLimit.observedAt, relativeTo: Date())
         let resets = rateLimit.resetsAt.formatted(date: .omitted, time: .shortened)
         return "Measured \(observed) · resets at \(resets)"
     }
+
+    /// Held rather than built per redraw — the gauge is rebuilt whenever the
+    /// menu is, and a date formatter is not cheap to make.
+    private static let age: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        return formatter
+    }()
 }

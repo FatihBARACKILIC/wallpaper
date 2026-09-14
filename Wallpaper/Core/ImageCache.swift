@@ -25,6 +25,10 @@ enum CacheError: LocalizedError {
 /// Only downloaded photos live here. A photo from one of the user's own folders
 /// is never copied in — it is used where it lies, so nothing in this type can
 /// ever rename or delete it.
+///
+/// The index lives in memory and is answered from there; the disk is only ever
+/// touched to walk the folder or to move, delete and record files, and those
+/// are the parts that run off the main actor.
 @Observable
 final class ImageCache {
     struct Stats: Equatable {
@@ -32,8 +36,16 @@ final class ImageCache {
         var bytes: Int64 = 0
 
         var formattedBytes: String {
-            ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+            Self.formatter.string(fromByteCount: bytes)
         }
+
+        /// Held rather than built per call: this is read from a view body, and
+        /// a formatter is not a cheap thing to make.
+        private static let formatter: ByteCountFormatter = {
+            let formatter = ByteCountFormatter()
+            formatter.countStyle = .file
+            return formatter
+        }()
     }
 
     private(set) var stats = Stats()
@@ -44,7 +56,15 @@ final class ImageCache {
     /// Which photo each cached file is, so a file can be re-used later with
     /// proper attribution. Kept beside the photo folder rather than inside it,
     /// so it is never counted towards the storage limit or evicted.
-    private var index: [String: Artwork] = [:]
+    private var index: [String: Artwork] = [:] {
+        didSet { filenamesByKey = Self.reverseIndex(index) }
+    }
+
+    /// `Artwork.key` to filename. Every pinned photo is looked up on every
+    /// housekeep, which is often enough that scanning the index for each one
+    /// was the wrong shape.
+    private var filenamesByKey: [String: String] = [:]
+
     private var indexURL: URL {
         directory.deletingLastPathComponent().appending(path: "photo-index.json")
     }
@@ -61,10 +81,16 @@ final class ImageCache {
 
         try? fileManager.createDirectory(at: self.directory, withIntermediateDirectories: true)
         loadIndex()
-        refreshStats()
+        refreshStats(from: Self.listing(of: self.directory))
     }
 
     // MARK: - Index
+
+    private static func reverseIndex(_ index: [String: Artwork]) -> [String: String] {
+        index.reduce(into: [:]) { result, pair in
+            result[pair.value.key] = pair.key
+        }
+    }
 
     private func loadIndex() {
         guard let data = try? Data(contentsOf: indexURL),
@@ -73,6 +99,10 @@ final class ImageCache {
         index = decoded
     }
 
+    /// Written on the main actor on purpose: the file holds at most a few
+    /// hundred short entries — measured under a kilobyte for a typical cache —
+    /// and an atomic write of that size costs less than the bookkeeping needed
+    /// to keep two writes in order if they were handed to a background task.
     private func saveIndex() {
         guard let data = try? JSONEncoder().encode(index) else { return }
         try? data.write(to: indexURL, options: .atomic)
@@ -96,12 +126,10 @@ final class ImageCache {
     /// history or pinned as a favourite has to be recognised whatever day it
     /// arrived.
     func existingFile(for artwork: Artwork) -> URL? {
-        guard case .remote = artwork.origin else { return nil }
+        guard case .remote = artwork.origin, let filename = filenamesByKey[artwork.key] else { return nil }
 
-        return index.first { $0.value.key == artwork.key }.flatMap { filename, _ in
-            let url = directory.appending(path: filename)
-            return fileManager.fileExists(atPath: url.path) ? url : nil
-        }
+        let url = directory.appending(path: filename)
+        return fileManager.fileExists(atPath: url.path) ? url : nil
     }
 
     /// Deletes a downloaded photo and forgets it, so "never show again" does
@@ -113,18 +141,30 @@ final class ImageCache {
     func forget(_ artwork: Artwork) {
         guard case .remote = artwork.origin else { return }
 
+        var removed = Stats()
         for (filename, entry) in index where entry.key == artwork.key {
-            try? fileManager.removeItem(at: directory.appending(path: filename))
+            let url = directory.appending(path: filename)
+            let size = Int64((try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0)
+            if (try? fileManager.removeItem(at: url)) != nil {
+                removed.count += 1
+                removed.bytes += size
+            }
             index[filename] = nil
         }
         saveIndex()
-        refreshStats()
+        // Counted down rather than recounted: this runs on the "never show
+        // again" path, which already has a wallpaper change to get through.
+        stats = Stats(
+            count: max(0, stats.count - removed.count),
+            bytes: max(0, stats.bytes - removed.bytes)
+        )
     }
 
     /// Forgets index entries whose file is gone, so the index cannot outgrow
-    /// the folder it describes.
-    private func pruneIndex() {
-        let existing = Set(contents().map(\.url.lastPathComponent))
+    /// the folder it describes. Takes the listing it was going to need anyway
+    /// rather than walking the folder again.
+    private func pruneIndex(against files: [Entry]) {
+        let existing = Set(files.map(\.url.lastPathComponent))
         let before = index.count
         index = index.filter { existing.contains($0.key) }
         if index.count != before { saveIndex() }
@@ -168,21 +208,29 @@ final class ImageCache {
         }
 
         let (temporary, response) = try await session.download(from: remote)
-        defer { try? fileManager.removeItem(at: temporary) }
 
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            try? fileManager.removeItem(at: temporary)
             throw CacheError.badResponse(http.statusCode)
         }
 
-        // A partially written file must never become a wallpaper, so move into
-        // place only once the download is complete.
-        try? fileManager.removeItem(at: destination)
-        try fileManager.moveItem(at: temporary, to: destination)
-        setWhereFrom(artwork, on: destination)
+        let sources = [artwork.webURL, artwork.creatorURL].compactMap { $0?.absoluteString }
+        try await Task.detached(priority: .utility) {
+            // A partially written file must never become a wallpaper, so move
+            // into place only once the download is complete.
+            defer { try? FileManager.default.removeItem(at: temporary) }
+            try? FileManager.default.removeItem(at: destination)
+            try FileManager.default.moveItem(at: temporary, to: destination)
+            setWhereFrom(sources, on: destination)
+        }.value
 
         index[destination.lastPathComponent] = artwork
         saveIndex()
-        refreshStats()
+        // One file arrived and its size is one `stat` away, so the folder is
+        // not walked again for a number we can add. `enforce` recounts from its
+        // own listing moments later anyway.
+        let size = Int64((try? destination.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0)
+        stats = Stats(count: stats.count + 1, bytes: stats.bytes + size)
 
         return destination
     }
@@ -230,19 +278,6 @@ final class ImageCache {
         return result.isEmpty ? String(words.first?.prefix(60) ?? "") : result
     }
 
-    /// Writes the photo's page URL into the file's "Where from" metadata, so
-    /// the source survives even if the file is renamed.
-    private func setWhereFrom(_ artwork: Artwork, on url: URL) {
-        let sources = [artwork.webURL, artwork.creatorURL].compactMap { $0?.absoluteString }
-        guard let plist = try? PropertyListSerialization.data(
-            fromPropertyList: sources, format: .binary, options: 0
-        ) else { return }
-
-        _ = plist.withUnsafeBytes {
-            setxattr(url.path, "com.apple.metadata:kMDItemWhereFroms", $0.baseAddress, plist.count, 0, 0)
-        }
-    }
-
     private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
@@ -255,10 +290,17 @@ final class ImageCache {
     /// Evicts oldest-first until the folder fits `limit`. Files in `pinned` are
     /// never removed — they are the current wallpapers and the prefetched next
     /// photo, which would break the desktop or waste the prefetch.
-    func enforce(_ limit: StorageLimit, pinned: Set<URL>) {
+    ///
+    /// Walks the folder once. It used to walk it three times: once to sort, once
+    /// to prune the index and once to recount, and all three on the main actor
+    /// with a `stat` per file.
+    func enforce(_ limit: StorageLimit, pinned: Set<URL>) async {
+        let directory = directory
+        var files = await Task.detached(priority: .utility) { Self.listing(of: directory) }.value
+
         guard limit.isEnabled else {
-            pruneIndex()
-            refreshStats()
+            pruneIndex(against: files)
+            refreshStats(from: files)
             return
         }
 
@@ -267,7 +309,7 @@ final class ImageCache {
         // Files with no index entry go first: without knowing which photo they
         // are we cannot credit the photographer, so they can never be re-used
         // and would only crowd out photos that can.
-        let files = contents().sorted { left, right in
+        files.sort { left, right in
             let leftKnown = index[left.url.lastPathComponent] != nil
             let rightKnown = index[right.url.lastPathComponent] != nil
             if leftKnown != rightKnown { return !leftKnown }
@@ -276,39 +318,64 @@ final class ImageCache {
 
         var count = files.count
         var bytes = files.reduce(Int64(0)) { $0 + $1.size }
+        var doomed: Set<URL> = []
 
         for file in files where count > limit.maxPhotos || bytes > limit.maxBytes {
             guard !pinnedPaths.contains(file.url.standardizedFileURL.path) else { continue }
-            guard (try? fileManager.removeItem(at: file.url)) != nil else { continue }
+            doomed.insert(file.url)
             count -= 1
             bytes -= file.size
         }
 
-        pruneIndex()
-        refreshStats()
+        let survivors = await delete(doomed, from: files)
+        pruneIndex(against: survivors)
+        refreshStats(from: survivors)
     }
 
     /// Deletes every cached photo except the ones currently on screen.
-    func clear(keeping pinned: Set<URL>) {
+    func clear(keeping pinned: Set<URL>) async {
+        let directory = directory
+        let files = await Task.detached(priority: .utility) { Self.listing(of: directory) }.value
+
         let pinnedPaths = Set(pinned.map(\.standardizedFileURL.path))
-        for file in contents() where !pinnedPaths.contains(file.url.standardizedFileURL.path) {
-            try? fileManager.removeItem(at: file.url)
-        }
-        pruneIndex()
-        refreshStats()
+        let doomed = Set(
+            files.map(\.url).filter { !pinnedPaths.contains($0.standardizedFileURL.path) }
+        )
+
+        let survivors = await delete(doomed, from: files)
+        pruneIndex(against: survivors)
+        refreshStats(from: survivors)
+    }
+
+    /// Removes files off the main actor and reports what is left, so the caller
+    /// never has to walk the folder again to find out.
+    private func delete(_ doomed: Set<URL>, from files: [Entry]) async -> [Entry] {
+        guard !doomed.isEmpty else { return files }
+
+        let failed = await Task.detached(priority: .utility) { () -> Set<URL> in
+            var failed: Set<URL> = []
+            for url in doomed where (try? FileManager.default.removeItem(at: url)) == nil {
+                failed.insert(url)
+            }
+            return failed
+        }.value
+
+        return files.filter { !doomed.contains($0.url) || failed.contains($0.url) }
     }
 
     // MARK: - Inspection
 
-    private struct Entry {
+    /// One file in the photo folder. `Sendable` because the listing is built
+    /// off the main actor and handed back.
+    nonisolated struct Entry: Sendable {
         let url: URL
         let size: Int64
         let created: Date
     }
 
-    private func contents() -> [Entry] {
+    private nonisolated static func listing(of directory: URL) -> [Entry] {
         let keys: [URLResourceKey] = [.fileSizeKey, .creationDateKey, .isRegularFileKey]
-        guard let urls = try? fileManager.contentsOfDirectory(
+        guard let urls = try? FileManager.default.contentsOfDirectory(
             at: directory, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]
         ) else { return [] }
 
@@ -325,8 +392,22 @@ final class ImageCache {
         }
     }
 
-    private func refreshStats() {
-        let files = contents()
+    private func refreshStats(from files: [Entry]) {
         stats = Stats(count: files.count, bytes: files.reduce(0) { $0 + $1.size })
+    }
+}
+
+/// Writes the photo's page URL into the file's "Where from" metadata, so the
+/// source survives even if the file is renamed. Free-standing and `nonisolated`
+/// so it can run beside the move it belongs with, off the main actor.
+private nonisolated func setWhereFrom(_ sources: [String], on url: URL) {
+    guard !sources.isEmpty,
+          let plist = try? PropertyListSerialization.data(
+              fromPropertyList: sources, format: .binary, options: 0
+          )
+    else { return }
+
+    _ = plist.withUnsafeBytes {
+        setxattr(url.path, "com.apple.metadata:kMDItemWhereFroms", $0.baseAddress, plist.count, 0, 0)
     }
 }

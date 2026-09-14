@@ -32,7 +32,12 @@ enum LocalFolderError: LocalizedError {
 ///
 /// Costs no network and no API request, which also means a folder-only setup
 /// works with no keys and no connection at all.
-enum LocalFolder {
+///
+/// `nonisolated` on purpose. A folder can hold thousands of files, and walking
+/// it is the one part of a wallpaper change whose cost grows with what the user
+/// happens to own — so the whole pick runs off the main actor. A big folder may
+/// make a change slower; it must never make the menu stutter.
+nonisolated enum LocalFolder {
     /// Every image in `folder`, including its subfolders.
     ///
     /// Hidden files are skipped, and so are package contents — a `.photoslibrary`
@@ -63,6 +68,10 @@ enum LocalFolder {
 
     /// Picks `count` images at random.
     ///
+    /// Runs on a background executor: the scan, the "never show again" filter
+    /// and the header reads all grow with the size of the folder, and a change
+    /// must not hold the main actor for as long as the user's archive is large.
+    ///
     /// Avoids what is already on screen so the desktop visibly changes, but
     /// gives that up rather than returning nothing — a folder holding a single
     /// photo should still work.
@@ -84,17 +93,40 @@ enum LocalFolder {
         avoiding inUse: Set<URL>,
         blocked: Set<String> = [],
         fitting screenRatio: Double? = nil
-    ) throws -> [Artwork] {
-        let all = try images(in: source.folderURL).map(artwork(for:))
+    ) async throws -> [Artwork] {
+        let folder = source.folderURL
+        return try await Task.detached(priority: .utility) {
+            try pick(count: count, in: folder, avoiding: inUse, blocked: blocked, fitting: screenRatio)
+        }.value
+    }
 
-        let allowed = blocked.isEmpty ? all : all.filter { !blocked.contains($0.key) }
+    /// The pick itself, in file terms.
+    ///
+    /// Everything up to the last step deals in URLs rather than `Artwork`:
+    /// describing every file meant a folder of five thousand photos built five
+    /// thousand values on every change in order to use one of them. Only the
+    /// handful actually returned are described.
+    private static func pick(
+        count: Int,
+        in folder: URL,
+        avoiding inUse: Set<URL>,
+        blocked: Set<String>,
+        fitting screenRatio: Double?
+    ) throws -> [Artwork] {
+        let all = try images(in: folder)
+
+        let allowed = blocked.isEmpty ? all : all.filter { !blocked.contains(key(for: $0)) }
         // A folder whose every photo is blocked has nothing to offer. Source
         // specific, so the next source gets a turn rather than the desktop
         // freezing — but said in its own words, because "no images found" would
         // send the user looking for a problem with the folder.
-        guard !allowed.isEmpty else { throw LocalFolderError.allBlocked(source.folderURL.path) }
+        guard !allowed.isEmpty else { throw LocalFolderError.allBlocked(folder.path) }
 
-        let fresh = allowed.filter { !inUse.contains($0.origin.url.standardizedFileURL) }
+        // Standardising a path is not free, so it is only done when there is
+        // something to compare it against.
+        let fresh = inUse.isEmpty
+            ? allowed
+            : allowed.filter { !inUse.contains($0.standardizedFileURL) }
         let pool = fresh.isEmpty ? allowed : fresh
 
         var chosen = shortlist(from: pool, count: max(1, count), screenRatio: screenRatio)
@@ -104,7 +136,12 @@ enum LocalFolder {
             chosen.append(first)
         }
 
-        return chosen
+        return chosen.map(artwork(for:))
+    }
+
+    /// What `Artwork.key` would be for this file, without building one.
+    private static func key(for file: URL) -> String {
+        Artwork.key(provider: .local, id: file.standardizedFileURL.path)
     }
 
     // MARK: - Fitting the screen
@@ -130,25 +167,20 @@ enum LocalFolder {
         return 1 - min(photoRatio, screenRatio) / max(photoRatio, screenRatio)
     }
 
-    /// Picks `count` photos, preferring the ones that fit the screen.
+    /// Picks `count` files, preferring the ones that fit the screen.
     ///
     /// The pool is shuffled first, so what gets measured is a random sample and
     /// the same handful of well-shaped files is not returned every time. A file
     /// whose size cannot be read sorts last but stays in the list, for the same
     /// reason an unmeasured brightness does: "nobody knows" is not "bad fit".
-    private static func shortlist(
-        from pool: [Artwork],
-        count: Int,
-        screenRatio: Double?
-    ) -> [Artwork] {
+    private static func shortlist(from pool: [URL], count: Int, screenRatio: Double?) -> [URL] {
         let shuffled = pool.shuffled()
         guard let screenRatio, shuffled.count > count else {
             return Array(shuffled.prefix(count))
         }
 
-        let sample = Array(shuffled.prefix(fitSampleLimit))
-        let ranked = sample.enumerated()
-            .map { (offset: $0.offset, artwork: $0.element, crop: crop(of: $0.element, screenRatio: screenRatio)) }
+        let ranked = shuffled.prefix(fitSampleLimit).enumerated()
+            .map { (offset: $0.offset, url: $0.element, crop: crop(of: $0.element, screenRatio: screenRatio)) }
             .sorted { left, right in
                 switch (left.crop, right.crop) {
                 case let (a?, b?) where a != b: return a < b
@@ -159,11 +191,11 @@ enum LocalFolder {
                 }
             }
 
-        return ranked.prefix(count).map(\.artwork)
+        return ranked.prefix(count).map(\.url)
     }
 
-    private static func crop(of artwork: Artwork, screenRatio: Double) -> Double? {
-        pixelSize(of: artwork.origin.url).map { cropFraction(photo: $0, screenRatio: screenRatio) }
+    private static func crop(of file: URL, screenRatio: Double) -> Double? {
+        pixelSize(of: file).map { cropFraction(photo: $0, screenRatio: screenRatio) }
     }
 
     /// The photo's dimensions, straight from the file header. Nothing is

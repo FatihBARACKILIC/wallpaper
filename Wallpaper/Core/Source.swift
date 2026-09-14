@@ -2,7 +2,9 @@ import Foundation
 
 /// One place photos can come from. The user may add several; each wallpaper
 /// change picks one at random.
-struct Source: Codable, Identifiable, Hashable {
+/// `nonisolated` for the same reason `Artwork` is: a source describes where
+/// photos come from, and the folder scan that reads one runs off the main actor.
+nonisolated struct Source: Codable, Identifiable, Hashable, Sendable {
     enum Kind: String, Codable, CaseIterable {
         case topic
         case collection

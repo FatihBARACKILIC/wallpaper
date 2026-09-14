@@ -160,7 +160,7 @@ struct OnboardingView: View {
               manager.settings.usableSources.isEmpty
         else { return nil }
 
-        return WallpaperManager.SetupError
+        return SetupError
             .noUsableSources(manager.settings.settings.sources)
             .localizedDescription
     }

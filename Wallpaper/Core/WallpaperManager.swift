@@ -349,80 +349,6 @@ final class WallpaperManager {
         return SolarPosition.sunriseAndSunset(at: coordinate)
     }
 
-    /// Orders a draw so the photos that suit the sky come first.
-    ///
-    /// A preference, never a filter. Nothing is dropped: a draw where every
-    /// photo is wrong for the hour still changes the wallpaper, because a
-    /// desktop that freezes at dusk is a worse outcome than one wearing a
-    /// bright photo at night. Photos whose brightness nobody knows sort last
-    /// but stay in the list for the same reason.
-    ///
-    /// Stable within equal fits, so the shuffle the draw already has is not
-    /// undone.
-    private func ranked(_ artworks: [Artwork], for sunlight: Sunlight?) async -> [Artwork] {
-        guard let sunlight, artworks.count > 1 else { return artworks }
-
-        let measured = await measuringLocalFiles(artworks)
-        let target = sunlight.targetBrightness
-
-        return measured
-            .enumerated()
-            .sorted { left, right in
-                let a = left.element.lightness.map { abs($0 - target) }
-                let b = right.element.lightness.map { abs($0 - target) }
-                switch (a, b) {
-                case let (a?, b?) where a != b: return a < b
-                case (nil, _?): return false
-                case (_?, nil): return true
-                default: return left.offset < right.offset
-                }
-            }
-            .map(\.element)
-    }
-
-    /// Measures the photos that are already files on this Mac.
-    ///
-    /// Only those: measuring a remote photo would mean downloading it first,
-    /// and downloading a batch to choose one from it is exactly the cost this
-    /// feature is built to avoid. Unsplash and Wallhaven send a dominant colour
-    /// with the search result instead, so theirs is already known; APOD sends
-    /// nothing and is measured after the download it was going to do anyway.
-    ///
-    /// Capped, and off the main thread: a folder draw is a shortlist, but the
-    /// shortlist grows with the screen count and every measurement decodes a
-    /// thumbnail.
-    private func measuringLocalFiles(_ artworks: [Artwork]) async -> [Artwork] {
-        // Worked out here and handed over as plain positions and URLs: the
-        // background task measures files and knows nothing about `Artwork`.
-        let pending: [(position: Int, url: URL)] = artworks.enumerated()
-            .prefix(Self.brightnessSampleLimit)
-            .compactMap { index, artwork in
-                guard artwork.lightness == nil, artwork.origin.isLocalFile else { return nil }
-                return (index, artwork.origin.url)
-            }
-        guard !pending.isEmpty else { return artworks }
-
-        let measured = await Task.detached(priority: .utility) {
-            pending.reduce(into: [Int: Double]()) { result, file in
-                result[file.position] = ImageBrightness.lightness(ofFile: file.url)
-            }
-        }.value
-
-        return artworks.enumerated().map { index, artwork in
-            measured[index].map { artwork.withLightness($0) } ?? artwork
-        }
-    }
-
-    /// How many files a folder draw is willing to measure before it stops
-    /// caring which is the best fit.
-    ///
-    /// Measuring costs about 60 ms for a full-size JPEG with no embedded
-    /// thumbnail — measured — so this is a second of background CPU once per
-    /// change, and it is sized to the draw rather than guessed: `askFor` adds
-    /// ten candidates when the sky is being matched, so twelve covers a
-    /// single-screen folder pick without ever leaving files unmeasured.
-    private static let brightnessSampleLimit = 12
-
     /// Picks a source and readies `count` photos from it.
     ///
     /// Sources are tried in random order, and a failure that is specific to one
@@ -476,21 +402,21 @@ final class WallpaperManager {
             // Nothing to download: the files are already on this Mac, and they
             // are the user's, so they are used exactly where they lie.
             let inUse = Set(current.map(\.url.standardizedFileURL))
-            let files = try LocalFolder.randomArtworks(
+            let files = try await LocalFolder.randomArtworks(
                 count: askFor(count, sunlight: sunlight),
                 from: source,
                 avoiding: inUse,
                 blocked: library.blockedKeys,
                 fitting: screenAspectRatio
             )
-            return await ranked(files, for: sunlight)
+            return await SkyRanking.ranked(files, for: sunlight)
                 .prefix(count)
                 .map { Applied(artwork: $0, url: $0.origin.url) }
 
         case .apod:
             let entries = try await nasa.randomArtworks(count: askFor(count, sunlight: sunlight))
             return try await downloadAll(
-                await ranked(allowed(entries, from: source), for: sunlight), count: count
+                await SkyRanking.ranked(allowed(entries, from: source), for: sunlight), count: count
             )
 
         case .wallhaven:
@@ -500,7 +426,7 @@ final class WallpaperManager {
                 atLeast: wallhavenMinimumSize
             )
             return try await downloadAll(
-                await ranked(allowed(entries, from: source), for: sunlight), count: count
+                await SkyRanking.ranked(allowed(entries, from: source), for: sunlight), count: count
             )
 
         case .topic, .collection, .search:
@@ -508,7 +434,7 @@ final class WallpaperManager {
                 count: askFor(count, sunlight: sunlight), from: source
             )
             return try await downloadAll(
-                await ranked(allowed(photos, from: source), for: sunlight), count: count
+                await SkyRanking.ranked(allowed(photos, from: source), for: sunlight), count: count
             )
         }
     }
@@ -553,7 +479,7 @@ final class WallpaperManager {
             // The file is the truth about how light a photo is; a dominant
             // colour is only a good enough guess to have ranked the batch by.
             // Writing it back is what lets the cache fallback rank too.
-            let measured = await measured(artwork, at: url)
+            let measured = await measuring(artwork, at: url)
             cache.record(measured, at: url)
 
             results.append(Applied(artwork: measured, url: url))
@@ -561,13 +487,11 @@ final class WallpaperManager {
         return results
     }
 
-    /// Fills in a downloaded photo's brightness from the file itself.
-    private func measured(_ artwork: Artwork, at url: URL) async -> Artwork {
+    /// Measures a downloaded photo, but only when the sky is being matched:
+    /// nothing else reads the value, and measuring costs a decode.
+    private func measuring(_ artwork: Artwork, at url: URL) async -> Artwork {
         guard settings.settings.sunlight.isEnabled else { return artwork }
-        let measured = await Task.detached(priority: .utility) {
-            ImageBrightness.lightness(ofFile: url)
-        }.value
-        return artwork.withLightness(measured)
+        return await SkyRanking.measuring(artwork, at: url)
     }
 
     /// Whether the failure says "this source won't do" rather than "the app is
@@ -771,92 +695,9 @@ final class WallpaperManager {
 
     // MARK: - Failure recovery
 
-    /// The app is configured, but not in a way it can act on.
-    enum SetupError: LocalizedError {
-        /// Sources exist, but every one of them is waiting on a key.
-        case noUsableSources([Source])
-
-        var errorDescription: String? {
-            switch self {
-            case .noUsableSources(let sources):
-                let needed = Set(sources.map(\.kind.provider))
-                return switch (needed.contains(.unsplash), needed.contains(.apod)) {
-                case (true, true):
-                    "Your sources need an Unsplash Access Key and a NASA API key. Add them in Settings."
-                case (false, true):
-                    "The NASA APOD source needs a NASA API key. Add one in Settings."
-                default:
-                    "Your Unsplash sources need an Access Key. Add one in Settings."
-                }
-            }
-        }
-    }
-
-    /// A source offered photos, but not ones that could be used.
-    enum PickError: LocalizedError {
-        /// Every photo in the draw was on the user's "never show again" list.
-        /// The default recovery — retry with backoff — is the right one: the
-        /// next draw from an API is a different set of photos.
-        case everythingBlocked(Source)
-        /// A remembered photo whose file the user has since deleted. Only a
-        /// photo from one of their own folders can be lost this way; a
-        /// downloaded one is fetched again.
-        case fileGone(Artwork)
-
-        var errorDescription: String? {
-            switch self {
-            case .everythingBlocked(let source):
-                "Every photo \(source.shortLabel) offered is one you asked never to see again."
-            case .fileGone(let artwork):
-                "\(artwork.shortLabel) isn't on this Mac any more."
-            }
-        }
-    }
-
-    /// The connection is the user's own data allowance and
-    /// `pauseOnExpensiveNetwork` is on, so nothing may be downloaded. Not a
-    /// failure — a wait, which is why it recovers through `.waitForNetwork`.
-    enum MeteredNetworkError: LocalizedError {
-        case expensive
-        case constrained
-
-        var errorDescription: String? {
-            switch self {
-            case .expensive: "On cellular or a hotspot — waiting for Wi-Fi."
-            case .constrained: "Low Data Mode is on — waiting for a full-speed network."
-            }
-        }
-
-        /// Said instead when a photo already on disk could be shown.
-        var cacheNotice: String {
-            switch self {
-            case .expensive: "On a hotspot — showing a photo you already have."
-            case .constrained: "Low Data Mode — showing a photo you already have."
-            }
-        }
-    }
-
-    /// What to do about a failed change. Some failures fix themselves, some
-    /// need the user, and waiting a whole interval to find out which is no good
-    /// when the interval is a week.
-    private enum Recovery {
-        case retry(after: TimeInterval)
-        case waitForNetwork
-        case userMustAct
-
-        /// Only worth reaching for the cache when the network is unreachable,
-        /// not when the key or the sources are wrong.
-        var allowsCacheFallback: Bool {
-            switch self {
-            case .retry, .waitForNetwork: true
-            case .userMustAct: false
-            }
-        }
-    }
-
     private func handleFailure(_ error: any Error) async {
         consecutiveFailures += 1
-        let recovery = recovery(for: error)
+        let recovery = FailureRecovery.plan(for: error, consecutiveFailures: consecutiveFailures)
 
         // The network is out of reach, but the disk is not: keep rotating
         // through photos already downloaded rather than freezing on one.
@@ -927,7 +768,7 @@ final class WallpaperManager {
 
         // The index remembers how light each cached photo is, so an outage is
         // no reason to stop matching the sky.
-        let ordered = await ranked(candidates.shuffled().map(\.artwork), for: currentSunlight)
+        let ordered = await SkyRanking.ranked(candidates.shuffled().map(\.artwork), for: currentSunlight)
         let byKey = Dictionary(candidates.map { ($0.artwork.key, $0) }, uniquingKeysWith: { first, _ in first })
         var chosen = ordered.compactMap { byKey[$0.key] }.prefix(neededPhotoCount).map { $0 }
         // Fewer cached photos than screens: repeat rather than give up.
@@ -949,105 +790,6 @@ final class WallpaperManager {
         // already reported the first time it was used.
         Log.wallpaper.info("fell back to \(chosen.count, privacy: .public) cached photo(s)")
         return true
-    }
-
-    private func recovery(for error: any Error) -> Recovery {
-        switch error {
-        case is MeteredNetworkError:
-            // Nothing is wrong and nothing will fix itself with time: wait for
-            // the connection to change, which is exactly what the monitor does.
-            return .waitForNetwork
-
-        case let error as UnsplashError:
-            switch error {
-            case .missingAccessKey, .invalidAccessKey, .noPhotosFound:
-                // Nothing retrying can fix — the key or the source has to change.
-                return .userMustAct
-
-            case .rateLimited(let resetsAt):
-                // Retrying before the quota rolls over just wastes requests.
-                return .retry(after: waitForQuota(until: resetsAt))
-
-            case .unexpectedStatus:
-                return .retry(after: backoffDelay)
-
-            case .transport(let underlying):
-                return Self.isOffline(underlying) ? .waitForNetwork : .retry(after: backoffDelay)
-            }
-
-        case let error as NASAError:
-            switch error {
-            case .missingAPIKey, .invalidAPIKey:
-                return .userMustAct
-
-            case .noPhotosFound:
-                // Today's random draw was all videos. A fresh draw is a
-                // different set of days, so this really does fix itself.
-                return .retry(after: backoffDelay)
-
-            case .rateLimited(let resetsAt):
-                return .retry(after: waitForQuota(until: resetsAt))
-
-            case .unexpectedStatus:
-                return .retry(after: backoffDelay)
-
-            case .transport(let underlying):
-                return Self.isOffline(underlying) ? .waitForNetwork : .retry(after: backoffDelay)
-            }
-
-        // A folder that is gone and a setup with no usable source both need the
-        // user: no amount of retrying will plug a drive back in or type a key.
-        case let error as WallhavenError:
-            switch error {
-            case .invalidAPIKey:
-                // Wallhaven is never sent a key, so this cannot be the user's
-                // to fix; treat it as the server misbehaving.
-                return .retry(after: backoffDelay)
-
-            case .noPhotosFound:
-                // The search matched nothing even without a minimum size, so a
-                // fresh draw will match nothing either.
-                return .userMustAct
-
-            case .rateLimited:
-                // 45 a minute, and it clears on a rolling window rather than on
-                // the hour, so the ordinary backoff is already long enough.
-                return .retry(after: backoffDelay)
-
-            case .unexpectedStatus:
-                return .retry(after: backoffDelay)
-
-            case .transport(let underlying):
-                return Self.isOffline(underlying) ? .waitForNetwork : .retry(after: backoffDelay)
-            }
-
-        case is LocalFolderError, is SetupError:
-            return .userMustAct
-
-        default:
-            return .retry(after: backoffDelay)
-        }
-    }
-
-    /// Long enough for the quota to roll over, never shorter than a minute.
-    private func waitForQuota(until resetsAt: Date?) -> TimeInterval {
-        max(60, (resetsAt?.timeIntervalSinceNow ?? 3600) + 60)
-    }
-
-    private static func isOffline(_ error: any Error) -> Bool {
-        [
-            NSURLErrorNotConnectedToInternet,
-            NSURLErrorNetworkConnectionLost,
-            NSURLErrorCannotConnectToHost,
-            NSURLErrorDNSLookupFailed,
-        ].contains((error as NSError).code)
-    }
-
-    /// 30s, 1m, 2m, 5m, 15m, then flat. Long enough not to hammer a provider,
-    /// short enough that a week-long interval isn't stuck for a week.
-    private var backoffDelay: TimeInterval {
-        let ladder: [TimeInterval] = [30, 60, 120, 300, 900]
-        return ladder[min(consecutiveFailures - 1, ladder.count - 1)]
     }
 
     private func scheduleRetry(after delay: TimeInterval) {
@@ -1102,9 +844,10 @@ final class WallpaperManager {
             forName: NSApplication.didChangeScreenParametersNotification,
             object: nil,
             queue: .main
-        ) { _ in
+        ) { [weak self] _ in
+            guard let manager = self else { return }
             Task { @MainActor in
-                WallpaperManager.shared.screenConfigurationChanged()
+                manager.screenConfigurationChanged()
             }
         }
     }
@@ -1202,9 +945,10 @@ final class WallpaperManager {
             forName: NSWorkspace.activeSpaceDidChangeNotification,
             object: nil,
             queue: .main
-        ) { _ in
+        ) { [weak self] _ in
+            guard let manager = self else { return }
             Task { @MainActor in
-                WallpaperManager.shared.activeSpaceChanged()
+                manager.activeSpaceChanged()
             }
         }
     }
@@ -1279,14 +1023,21 @@ final class WallpaperManager {
         Set(library.favorites.compactMap { cache.existingFile(for: $0.artwork) })
     }
 
+    /// Eviction walks the photo folder and deletes files, and nothing that asks
+    /// for it is waiting on the answer — so it is started and left to run.
+    /// `pinnedURLs` is read here, on the main actor, because it asks the
+    /// windowing system what is on screen.
     private func housekeep() {
-        cache.enforce(settings.settings.storageLimit, pinned: pinnedURLs)
+        let limit = settings.settings.storageLimit
+        let pinned = pinnedURLs
+        Task { await cache.enforce(limit, pinned: pinned) }
     }
 
     /// "Delete photos" in Settings. Keeps the current wallpapers so the desktop
     /// survives, and drops the prefetch queue along with the files.
     func clearCache() {
         prefetched.removeAll()
-        cache.clear(keeping: pinnedURLs)
+        let pinned = pinnedURLs
+        Task { await cache.clear(keeping: pinned) }
     }
 }

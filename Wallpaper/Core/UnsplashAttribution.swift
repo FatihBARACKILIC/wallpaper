@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// Builds the links used for attribution.
 ///
@@ -6,12 +7,23 @@ import Foundation
 /// `utm_source` (the application name as registered with Unsplash) and
 /// `utm_medium=referral`. Since each user registers their own application, the
 /// name is a setting rather than a constant.
-enum UnsplashAttribution {
+///
+/// `nonisolated`, and the name is behind a lock rather than behind the main
+/// actor. Attribution is part of describing a photo, and photos are described
+/// wherever they are found — including the background executor a folder scan or
+/// a download runs on. This is the app's one piece of global mutable state, so
+/// it says out loud how it is protected.
+nonisolated enum UnsplashAttribution {
     static let defaultApplicationName = "Wallpaper"
+
+    private static let name = Mutex<String>(defaultApplicationName)
 
     /// Kept in sync by `SettingsStore` so views can build links without
     /// threading the name through every layer.
-    static var applicationName: String = defaultApplicationName
+    static var applicationName: String {
+        get { name.withLock { $0 } }
+        set { name.withLock { $0 = newValue } }
+    }
 
     static var homeURL: URL {
         link("https://unsplash.com/") ?? URL(string: "https://unsplash.com/")!

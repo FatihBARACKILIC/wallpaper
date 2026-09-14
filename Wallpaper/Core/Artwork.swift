@@ -6,7 +6,11 @@ import Foundation
 /// object, NASA APOD with a flat one, a local folder with nothing at all — so
 /// each maps into this before anything else sees it. Everything persisted
 /// (`photo-index.json`, `currentWallpapers`) is in these terms.
-struct Artwork: Codable, Hashable, Identifiable, Sendable {
+/// `nonisolated` because this is data, not state. The app defaults every type
+/// to the main actor, which is right for the objects that hold the app together
+/// and wrong for the value it passes between them: a folder scan, a brightness
+/// measurement and a download all describe photos from a background executor.
+nonisolated struct Artwork: Codable, Hashable, Identifiable, Sendable {
     enum Provider: String, Codable, Sendable {
         case unsplash
         case apod
@@ -77,7 +81,15 @@ struct Artwork: Codable, Hashable, Identifiable, Sendable {
     /// namespaces overlap in shape — an APOD entry is a date, a folder photo is
     /// a path, and an Unsplash and a Wallhaven ID are the same short string of
     /// letters. Two photos are the same photo when both parts match.
-    var key: String { "\(provider.rawValue):\(id)" }
+    var key: String { Self.key(provider: provider, id: id) }
+
+    /// The same key for code that has the parts but not the photo: a folder
+    /// draw filters thousands of files against the block list, and building an
+    /// `Artwork` for each one to ask its key is the work that filter exists to
+    /// avoid. Kept here so the two spellings cannot drift apart.
+    static func key(provider: Provider, id: String) -> String {
+        "\(provider.rawValue):\(id)"
+    }
 
     /// Where this photo came from, ready to open.
     ///
@@ -212,7 +224,7 @@ struct Artwork: Codable, Hashable, Identifiable, Sendable {
 }
 
 /// The image types the app is willing to put on a desktop.
-enum ImageFile {
+nonisolated enum ImageFile {
     /// What `NSImage` reads and `setDesktopImageURL` accepts. HEIC is included
     /// because it is what a modern iPhone writes, and macOS ships HEIC
     /// wallpapers of its own.
