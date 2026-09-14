@@ -63,6 +63,8 @@ xcodebuild test -project Wallpaper.xcodeproj -scheme Wallpaper -destination 'pla
 ## Local folders
 
 - Scanned recursively, skipping hidden files and package descendants — a `.photoslibrary` or an `.app` is full of images nobody means to see on their desktop. `ImageFile.extensions` is the whitelist.
+- **Photos that fit the screen are drawn first**, because both API sources already ask for landscape — Unsplash by `orientation`, Wallhaven by `ratios` — and a folder had no equivalent, so a camera roll put hard-cropped portraits on a widescreen desktop. `cropFraction` is the fraction of the photo thrown away when it fills the screen (`1 - min/max` of the two ratios), which is symmetric and reads as a real number: a 4:3 photo loses 0.25 on 16:9, a phone portrait over 0.55. A preference, not a filter, exactly as `ranked` is: nothing is dropped, a file whose header will not parse sorts last rather than disappearing, and a folder holding nothing but portraits behaves as it always did. Not a setting — the API sources do not offer one either. The pool is shuffled *before* the sample is measured, or the same well-shaped handful would come back every time, and `sorted` is not stable so the shuffle is preserved by hand.
+- **Only a sample is measured, and only the header.** `pixelSize` reads `CGImageSourceCopyPropertiesAtIndex` and decodes nothing: measured at 0.09 ms for a JPEG but 0.97 ms for a 6K HEIC, which is why `fitSampleLimit` caps it at 60 files rather than measuring a folder that may hold thousands. That is still ~600× cheaper than the ~60 ms a brightness measurement costs, which is why this one can look at a sample of the folder while brightness only looks at the shortlist.
 - Re-scanned on every change rather than watched. A folder watcher is a live resource for something that only matters at change time, which the idle budget does not allow.
 - Nothing is ever written. The tests assert the folder is byte-identical after a pick, because this is the one place the app touches files it does not own.
 - Selection is through `NSOpenPanel` with `allowsMultipleSelection`. The app is unsandboxed so a plain path is enough — no security-scoped bookmark — but TCC still prompts the first time a folder inside Desktop, Documents or Downloads is read.
@@ -122,7 +124,7 @@ Tools/MakeAppIcon.swift draws the app icon:
 `WallpaperTests` covers what can be checked without macOS in the loop: the
 `Source` parser, attribution links, the request estimate, `Artwork.downloadURL`
 and its migration, the APOD and Wallhaven mappings, the NOAA solar equations
-and the brightness scale, `LocalFolder` scanning, `ImageCache`
+and the brightness scale, `LocalFolder` scanning and screen fit, `ImageCache`
 naming and eviction, and `PhotoLibrary`'s three lists — including that
 `ImageCache.forget` leaves a file of the user's own alone. Everything the
 wallpaper actually touches

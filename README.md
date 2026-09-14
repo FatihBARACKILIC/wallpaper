@@ -10,6 +10,7 @@ Built to stay out of the way: no Dock icon, no windows unless you open them, and
 - **Four kinds of source** — Unsplash, Wallhaven, NASA's Astronomy Picture of the Day, and folders of your own photos
 - **Multiple sources** — mix as many as you like; each change picks one at random, listed as `t/` topic, `c/` collection, `s/` search, `w/` Wallhaven, `n/` NASA and `f/` folder
 - **Your own photos** — add as many folders as you want, subfolders included. Nothing is uploaded, and your files are never moved, renamed or deleted
+- **Shaped for your screen** — photos that fit your display are picked first, so a folder of phone photos doesn't put a heavily cropped portrait on a widescreen desktop
 - **Works with no key at all** — Wallhaven needs no key, and a setup made only of folders needs no account and no connection
 - **Your own API keys** — stored encrypted in the macOS Keychain, one per service
 - **Flexible schedule** — nine intervals from 5 minutes to 1 week, or manual only
@@ -90,6 +91,8 @@ A change costs one request. Wallhaven allows 45 a minute.
 **Settings › Sources › Add folders…** takes any number of folders, and you can pick several at once. Subfolders are included; hidden files and package contents such as a Photos library are not.
 
 Folder photos cost no requests and need no connection, and they are used exactly where they lie — the app never copies them into its cache, so the storage limit and its eviction can never touch your originals. A folder on an external drive is simply skipped while the drive is unplugged.
+
+Photos shaped like your screen are picked first. A 4:3 photo loses a quarter of itself on a 16:9 display and a portrait photo from a phone loses well over half, so a camera roll would otherwise fill your desktop with hard-cropped portraits. The Unsplash and Wallhaven sources already ask for landscape photos; this is the same promise for your own files. It is a preference, not a filter — nothing is skipped, so a folder of nothing but portraits works exactly as it always did.
 
 The first time you pick a folder inside Desktop, Documents or Downloads, macOS asks you to grant access. That is the system's own permission prompt, and the app reads nothing else.
 

@@ -1,4 +1,6 @@
+import CoreGraphics
 import Foundation
+import ImageIO
 @testable import Wallpaper
 
 /// Builds a `Photo` without going near the network. Only the fields the tests
@@ -109,4 +111,34 @@ struct TemporaryFolder {
     func cleanUp() {
         try? FileManager.default.removeItem(at: url)
     }
+}
+
+/// Writes a real image of a known size and a known flat colour.
+///
+/// The folder tests need genuine dimensions in a genuine header — the point of
+/// the code under test is that it reads them — and the brightness tests need a
+/// colour whose answer can be worked out by hand.
+@discardableResult
+func writePNG(width: Int = 8, height: Int = 8, grey: UInt8 = 128, to url: URL) -> URL {
+    var pixels = [UInt8](repeating: grey, count: width * height * 4)
+    for index in stride(from: 3, to: pixels.count, by: 4) { pixels[index] = 255 }
+
+    guard let context = CGContext(
+        data: &pixels,
+        width: width,
+        height: height,
+        bitsPerComponent: 8,
+        bytesPerRow: width * 4,
+        space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+    ), let image = context.makeImage(),
+       let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil)
+    else { return url }
+
+    try? FileManager.default.createDirectory(
+        at: url.deletingLastPathComponent(), withIntermediateDirectories: true
+    )
+    CGImageDestinationAddImage(destination, image, nil)
+    CGImageDestinationFinalize(destination)
+    return url
 }

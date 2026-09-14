@@ -480,7 +480,8 @@ final class WallpaperManager {
                 count: askFor(count, sunlight: sunlight),
                 from: source,
                 avoiding: inUse,
-                blocked: library.blockedKeys
+                blocked: library.blockedKeys,
+                fitting: screenAspectRatio
             )
             return await ranked(files, for: sunlight)
                 .prefix(count)
@@ -578,6 +579,19 @@ final class WallpaperManager {
         if case .noPhotosFound = error as? NASAError { return true }
         if case .noPhotosFound = error as? WallhavenError { return true }
         return false
+    }
+
+    /// The shape a photo has to fill, for the folder draw.
+    ///
+    /// The largest screen, which is the same basis `downloadSize` falls back
+    /// to. In per-screen mode the displays can be different shapes, and one
+    /// answer for the whole batch is a better trade than scanning the folder
+    /// once per screen — the draw is a handful of photos, not a photo chosen
+    /// for each display in turn.
+    private var screenAspectRatio: Double? {
+        let size = WallpaperSetter.largestScreenPixelSize()
+        guard size.width > 0, size.height > 0 else { return nil }
+        return Double(size.width / size.height)
     }
 
     /// The smallest wallpaper Wallhaven may offer.

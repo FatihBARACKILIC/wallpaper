@@ -76,8 +76,8 @@ struct ImageBrightnessTests {
 
         let black = folder.url.appending(path: "black.png")
         let white = folder.url.appending(path: "white.png")
-        try writePNG(grey: 0, to: black)
-        try writePNG(grey: 255, to: white)
+        writePNG(grey: 0, to: black)
+        writePNG(grey: 255, to: white)
 
         #expect(try #require(ImageBrightness.lightness(ofFile: black)) < 0.01)
         #expect(try #require(ImageBrightness.lightness(ofFile: white)) > 0.99)
@@ -87,26 +87,4 @@ struct ImageBrightnessTests {
         #expect(ImageBrightness.lightness(ofFile: folder.write("broken.jpg")) == nil)
         #expect(ImageBrightness.lightness(ofFile: folder.url.appending(path: "gone.png")) == nil)
     }
-}
-
-/// A solid-grey PNG, so the expected answer is known exactly.
-private func writePNG(grey: UInt8, to url: URL) throws {
-    let width = 8, height = 8
-    var pixels = [UInt8](repeating: grey, count: width * height * 4)
-    for index in stride(from: 3, to: pixels.count, by: 4) { pixels[index] = 255 }
-
-    let context = CGContext(
-        data: &pixels,
-        width: width,
-        height: height,
-        bitsPerComponent: 8,
-        bytesPerRow: width * 4,
-        space: CGColorSpaceCreateDeviceRGB(),
-        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-    )!
-    let image = context.makeImage()!
-
-    let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil)!
-    CGImageDestinationAddImage(destination, image, nil)
-    CGImageDestinationFinalize(destination)
 }
