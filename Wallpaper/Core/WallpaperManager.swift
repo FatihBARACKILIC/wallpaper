@@ -66,6 +66,7 @@ final class WallpaperManager {
     let settings: SettingsStore
     let client: UnsplashClient
     let nasa: NASAClient
+    let wallhaven: WallhavenClient
     let cache: ImageCache
     let scheduler: Scheduler
     /// The last 50 wallpapers, the pinned ones and the blocked ones.
@@ -112,6 +113,7 @@ final class WallpaperManager {
         settings: SettingsStore = SettingsStore(),
         client: UnsplashClient = UnsplashClient(),
         nasa: NASAClient = NASAClient(),
+        wallhaven: WallhavenClient = WallhavenClient(),
         cache: ImageCache = ImageCache(),
         scheduler: Scheduler = Scheduler(),
         library: PhotoLibrary? = nil
@@ -119,6 +121,7 @@ final class WallpaperManager {
         self.settings = settings
         self.client = client
         self.nasa = nasa
+        self.wallhaven = wallhaven
         self.cache = cache
         self.scheduler = scheduler
         // Derived from the cache rather than worked out a second time, so there
@@ -369,6 +372,14 @@ final class WallpaperManager {
             let entries = try await nasa.randomArtworks(count: askFor(count))
             return try await downloadAll(allowed(entries, from: source), count: count)
 
+        case .wallhaven:
+            let entries = try await wallhaven.randomArtworks(
+                count: askFor(count),
+                from: source,
+                atLeast: wallhavenMinimumSize
+            )
+            return try await downloadAll(allowed(entries, from: source), count: count)
+
         case .topic, .collection, .search:
             let photos = try await client.randomArtworks(count: askFor(count), from: source)
             return try await downloadAll(allowed(photos, from: source), count: count)
@@ -377,8 +388,8 @@ final class WallpaperManager {
 
     /// How many photos to ask an API for.
     ///
-    /// A blocked photo can turn up in any draw — neither `/photos/random` nor
-    /// APOD knows what the user has rejected — so over-ask when there is a
+    /// A blocked photo can turn up in any draw — none of the three APIs knows
+    /// what the user has rejected — so over-ask when there is a
     /// block list to filter against. This costs no extra request: both
     /// providers return the whole batch in one call, and only the photos
     /// actually used are downloaded and reported.
@@ -415,7 +426,21 @@ final class WallpaperManager {
         if error is PickError { return true }
         if case .noPhotosFound = error as? UnsplashError { return true }
         if case .noPhotosFound = error as? NASAError { return true }
+        if case .noPhotosFound = error as? WallhavenError { return true }
         return false
+    }
+
+    /// The smallest wallpaper Wallhaven may offer.
+    ///
+    /// Wallhaven cannot resize, so `PhotoResolution` has nothing to shrink —
+    /// but a 1280×720 upload stretched over a 5K display is exactly what the
+    /// setting exists to prevent. Refusing anything smaller than the screen is
+    /// the only lever the API gives, and `.original` wants the same floor: it
+    /// asks for more pixels, never fewer.
+    private var wallhavenMinimumSize: CGSize {
+        settings.settings.photoResolution == .coverAllScreens
+            ? WallpaperSetter.coveringPixelSize()
+            : WallpaperSetter.largestScreenPixelSize()
     }
 
     /// `nil` means "leave the photo at its own size".
@@ -701,6 +726,11 @@ final class WallpaperManager {
             if case .rateLimited(let resetsAt) = error { ("Unsplash", resetsAt) } else { nil }
         case let error as NASAError:
             if case .rateLimited(let resetsAt) = error { ("NASA", resetsAt) } else { nil }
+        case let error as WallhavenError:
+            // Wallhaven's quota is 45 a minute, not an hour, so it names no
+            // reset time: by the time the user reads this it has already
+            // cleared.
+            if case .rateLimited = error { ("Wallhaven", nil) } else { nil }
         default:
             nil
         }
@@ -709,7 +739,7 @@ final class WallpaperManager {
             return "Couldn't fetch a new photo — showing one you already have."
         }
         guard let resetsAt = limited.resetsAt else {
-            return "\(limited.name) hourly limit reached — showing a photo you already have."
+            return "\(limited.name) request limit reached — showing a photo you already have."
         }
 
         let time = resetsAt.formatted(date: .omitted, time: .shortened)
@@ -799,6 +829,30 @@ final class WallpaperManager {
 
         // A folder that is gone and a setup with no usable source both need the
         // user: no amount of retrying will plug a drive back in or type a key.
+        case let error as WallhavenError:
+            switch error {
+            case .invalidAPIKey:
+                // Wallhaven is never sent a key, so this cannot be the user's
+                // to fix; treat it as the server misbehaving.
+                return .retry(after: backoffDelay)
+
+            case .noPhotosFound:
+                // The search matched nothing even without a minimum size, so a
+                // fresh draw will match nothing either.
+                return .userMustAct
+
+            case .rateLimited:
+                // 45 a minute, and it clears on a rolling window rather than on
+                // the hour, so the ordinary backoff is already long enough.
+                return .retry(after: backoffDelay)
+
+            case .unexpectedStatus:
+                return .retry(after: backoffDelay)
+
+            case .transport(let underlying):
+                return Self.isOffline(underlying) ? .waitForNetwork : .retry(after: backoffDelay)
+            }
+
         case is LocalFolderError, is SetupError:
             return .userMustAct
 
@@ -821,7 +875,7 @@ final class WallpaperManager {
         ].contains((error as NSError).code)
     }
 
-    /// 30s, 1m, 2m, 5m, 15m, then flat. Long enough not to hammer Unsplash,
+    /// 30s, 1m, 2m, 5m, 15m, then flat. Long enough not to hammer a provider,
     /// short enough that a week-long interval isn't stuck for a week.
     private var backoffDelay: TimeInterval {
         let ladder: [TimeInterval] = [30, 60, 120, 300, 900]

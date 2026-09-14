@@ -1,8 +1,9 @@
 import AppKit
 import SwiftUI
 
-/// Opens where a photo came from: its page on Unsplash, its day in the APOD
-/// archive, or — for a photo of the user's own — the file itself in Finder.
+/// Opens where a photo came from: its page on Unsplash or Wallhaven, its day
+/// in the APOD archive, or — for a photo of the user's own — the file itself in
+/// Finder.
 ///
 /// Icon only. It sits at the end of a list row that is already carrying the
 /// photo's name, its date and up to three other buttons, so the words go in
@@ -24,15 +25,21 @@ struct SourceLink: View {
             // all, which reads as a broken button.
             .disabled(isGone)
 
-        case .unsplash, .apod:
+        case .unsplash, .apod, .wallhaven:
             if let url = artwork.sourceURL {
                 Link(destination: url) {
                     Image(systemName: "arrow.up.forward.square")
                 }
-                .help(artwork.provider == .unsplash
-                      ? "Open this photo on Unsplash"
-                      : "Open this picture in the NASA APOD archive")
+                .help(openHelp)
             }
+        }
+    }
+
+    private var openHelp: String {
+        switch artwork.provider {
+        case .unsplash: "Open this photo on Unsplash"
+        case .apod: "Open this picture in the NASA APOD archive"
+        default: "Open this wallpaper on Wallhaven"
         }
     }
 

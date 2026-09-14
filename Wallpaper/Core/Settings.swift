@@ -53,7 +53,7 @@ extension Artwork.Provider {
     /// A folder on this Mac does not: the files are already here.
     var needsDownload: Bool {
         switch self {
-        case .unsplash, .apod: true
+        case .unsplash, .apod, .wallhaven: true
         case .local: false
         }
     }
@@ -62,13 +62,13 @@ extension Artwork.Provider {
     ///
     /// Unsplash is `1 + N`: a single `/photos/random` call fetches the whole
     /// batch, and then each photo needs the download report the API guidelines
-    /// require. APOD is flat 1 — it also returns the whole batch at once, and
-    /// has nothing to report afterwards. A folder on this Mac costs nothing;
-    /// the image bytes never count for any of them.
+    /// require. APOD and Wallhaven are flat 1 — they also answer with the whole
+    /// batch at once, and have nothing to report afterwards. A folder on this
+    /// Mac costs nothing; the image bytes never count for any of them.
     func requestCost(photosPerChange: Int) -> Int {
         switch self {
         case .unsplash: 1 + max(1, photosPerChange)
-        case .apod: 1
+        case .apod, .wallhaven: 1
         case .local: 0
         }
     }
@@ -262,14 +262,16 @@ final class SettingsStore {
 
     /// Whether `source` can actually be used right now.
     ///
-    /// A folder always can — it needs no key and no network. The two API
-    /// sources need their own key, which is why the app no longer insists on an
-    /// Unsplash key before it will start: a folder-only setup is a complete one.
+    /// A folder always can — it needs no key and no network. Wallhaven always
+    /// can too: it serves the wallpapers this app asks for to anonymous
+    /// callers, so there is no key to hold it up. Only Unsplash and APOD need
+    /// one, which is why the app no longer insists on an Unsplash key before it
+    /// will start: a folder- or Wallhaven-only setup is a complete one.
     func canUse(_ source: Source) -> Bool {
         switch source.kind.provider {
         case .unsplash: hasAccessKey
         case .apod: hasNASAKey
-        case .local: true
+        case .wallhaven, .local: true
         }
     }
 

@@ -159,8 +159,9 @@ struct MenuContent: View {
 
     /// Who to credit, which depends on where the photo came from. Unsplash's
     /// wording and links are fixed by its API guidelines; NASA asks only that
-    /// a copyrighted picture names its holder, and a file of the user's own
-    /// needs no credit at all.
+    /// a copyrighted picture names its holder; Wallhaven is user uploads, so
+    /// the most it can offer is the link the uploader credited; and a file of
+    /// the user's own needs no credit at all.
     @ViewBuilder
     private func attribution(for artwork: Artwork) -> some View {
         switch artwork.provider {
@@ -168,6 +169,8 @@ struct MenuContent: View {
             unsplashAttribution(for: artwork)
         case .apod:
             apodAttribution(for: artwork)
+        case .wallhaven:
+            wallhavenAttribution(for: artwork)
         case .local:
             localAttribution(for: artwork)
         }
@@ -219,6 +222,28 @@ struct MenuContent: View {
         }
     }
 
+    /// Wallhaven names no photographer: a search answer carries neither an
+    /// uploader nor a caption. What it sometimes does carry is the link the
+    /// uploader credited the image to, which is the closest thing to an author
+    /// there is — so it is offered when it exists and nothing is claimed when
+    /// it does not.
+    private func wallhavenAttribution(for artwork: Artwork) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Wallpaper from Wallhaven")
+                .font(.callout)
+
+            if let webURL = artwork.webURL {
+                Link("View this wallpaper", destination: webURL)
+                    .font(.caption)
+            }
+
+            if let originalURL = artwork.creatorURL {
+                Link("Original source", destination: originalURL)
+                    .font(.caption)
+            }
+        }
+    }
+
     private func localAttribution(for artwork: Artwork) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(artwork.title ?? artwork.origin.url.lastPathComponent)
@@ -241,8 +266,10 @@ struct MenuContent: View {
         return index < screens.count ? screens[index].localizedName : nil
     }
 
-    /// A gauge per API actually in use. A folder-only setup makes no requests
-    /// at all, so it gets no gauge.
+    /// A gauge per API with an hourly quota worth watching. A folder-only setup
+    /// makes no requests at all, so it gets no gauge — and neither does
+    /// Wallhaven, whose 45-a-minute rolling limit one request per change cannot
+    /// come near and whose reset `RateLimit` would describe wrongly.
     @ViewBuilder
     private var quotas: some View {
         let kinds = Set(manager.settings.settings.sources.map(\.kind.provider))
@@ -322,7 +349,7 @@ struct MenuContent: View {
     /// needs a source, and a list that is all Unsplash needs the key.
     private var setupMessage: String {
         guard !manager.settings.settings.sources.isEmpty else {
-            return "Add a source to start rotating wallpapers — an Unsplash topic, a folder of your own photos, or NASA's picture of the day."
+            return "Add a source to start rotating wallpapers — an Unsplash topic, a Wallhaven search, a folder of your own photos, or NASA's picture of the day."
         }
         return WallpaperManager.SetupError
             .noUsableSources(manager.settings.settings.sources)

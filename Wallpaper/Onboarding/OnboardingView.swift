@@ -40,7 +40,12 @@ struct OnboardingView: View {
                 Group {
                     switch step {
                     case .key: keyStep
-                    case .sources: SourceEditor(settings: manager.settings, client: manager.client)
+                    case .sources:
+                        SourceEditor(
+                            settings: manager.settings,
+                            client: manager.client,
+                            wallhaven: manager.wallhaven
+                        )
                     case .schedule: scheduleStep
                     }
                 }
@@ -75,7 +80,7 @@ struct OnboardingView: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             Label(
-                "Only needed for Unsplash sources. Skip it if you want to use folders of your own photos — those need no key and no connection.",
+                "Only needed for Unsplash sources. Skip it if you want Wallhaven, which needs no key, or folders of your own photos, which need no key and no connection.",
                 systemImage: "info.circle"
             )
             .font(.caption)

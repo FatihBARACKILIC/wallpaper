@@ -182,7 +182,9 @@ final class ImageCache {
         // nobody, so the provider stands in rather than leaving a gap.
         var parts = [date, Self.sanitize(artwork.creator ?? artwork.provider.displayName)]
 
-        if let title = artwork.title {
+        // A Wallhaven upload has no caption and carries its ID as a title;
+        // repeating it either side of the separator names nothing twice.
+        if let title = artwork.title, title != artwork.id {
             parts.append(Self.sanitize(title, joinedBy: "-"))
         }
         parts.append(Self.sanitize(artwork.id, joinedBy: "-"))

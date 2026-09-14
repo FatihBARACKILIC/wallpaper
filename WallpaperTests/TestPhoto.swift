@@ -61,6 +61,21 @@ func makeAPODArtwork(
     ).artwork
 }
 
+/// A Wallhaven wallpaper. `source` is the link the uploader credited the image
+/// to; most wallpapers carry an empty string there rather than omitting it.
+func makeWallhavenArtwork(
+    id: String = "4olrgp",
+    path: String = "https://w.wallhaven.cc/full/4o/wallhaven-4olrgp.jpg",
+    source: String? = ""
+) -> Artwork? {
+    WallhavenClient.Entry(
+        id: id,
+        url: "https://wallhaven.cc/w/\(id)",
+        path: path,
+        source: source
+    ).artwork
+}
+
 /// A photo from one of the user's own folders.
 func makeLocalArtwork(at url: URL) -> Artwork {
     LocalFolder.artwork(for: url)

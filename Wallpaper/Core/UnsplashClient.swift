@@ -181,7 +181,7 @@ final class UnsplashClient {
             items.append(URLQueryItem(name: "collections", value: source.value))
         case .search:
             items.append(URLQueryItem(name: "query", value: source.value))
-        case .apod, .folder:
+        case .apod, .wallhaven, .folder:
             // Routed elsewhere; the client is never handed one of these.
             throw UnsplashError.noPhotosFound(source)
         }

@@ -29,7 +29,12 @@ struct ArtworkTests {
 
     @Test("A round trip through the current shape keeps every field")
     func roundTrips() throws {
-        for artwork in [makeArtwork(), try #require(makeAPODArtwork()), makeLocalArtwork(at: URL(fileURLWithPath: "/tmp/a.png"))] {
+        for artwork in [
+            makeArtwork(),
+            try #require(makeAPODArtwork()),
+            try #require(makeWallhavenArtwork(source: "https://www.artstation.com/artwork/ZG4GeN")),
+            makeLocalArtwork(at: URL(fileURLWithPath: "/tmp/a.png")),
+        ] {
             let data = try JSONEncoder().encode(artwork)
             #expect(try JSONDecoder().decode(Artwork.self, from: data) == artwork)
         }
@@ -49,6 +54,12 @@ struct ArtworkTests {
         let apod = try #require(makeAPODArtwork()?.downloadURL(pixelSize: size))
         #expect(!apod.absoluteString.contains("w=1920"))
         #expect(apod.absoluteString.hasSuffix("_2048.jpg"))
+
+        // Wallhaven serves the file as it was uploaded; size is negotiated on
+        // the way in, with `atleast` on the search, not on the way out.
+        let wallhaven = try #require(makeWallhavenArtwork()?.downloadURL(pixelSize: size))
+        #expect(!wallhaven.absoluteString.contains("w=1920"))
+        #expect(wallhaven.absoluteString.hasSuffix("wallhaven-4olrgp.jpg"))
     }
 
     @Test("A photo already on this Mac has nothing to download")
@@ -67,6 +78,111 @@ struct ArtworkTests {
         #expect(try #require(makeAPODArtwork(hdurl: "https://apod.nasa.gov/apod/image/x.gif")).fileExtension == "gif")
         // Something unreadable falls back rather than inventing an extension.
         #expect(try #require(makeAPODArtwork(hdurl: "https://apod.nasa.gov/apod/image/x.mov")).fileExtension == "jpg")
+
+        // Wallhaven serves plenty of PNGs.
+        #expect(try #require(makeWallhavenArtwork()).fileExtension == "jpg")
+        #expect(try #require(makeWallhavenArtwork(
+            path: "https://w.wallhaven.cc/full/57/wallhaven-57g9k3.png"
+        )).fileExtension == "png")
+    }
+
+    @Test("The same short ID under two providers is two different photos")
+    func keyIsProviderQualified() throws {
+        // Unsplash and Wallhaven IDs are both short strings of letters and
+        // digits, so `id` alone would let one shadow the other in the history,
+        // the pins and the block list.
+        let unsplash = makeArtwork(id: "4olrgp")
+        let wallhaven = try #require(makeWallhavenArtwork(id: "4olrgp"))
+
+        #expect(unsplash.id == wallhaven.id)
+        #expect(unsplash.key != wallhaven.key)
+        #expect(wallhaven.key == "wallhaven:4olrgp")
+    }
+}
+
+/// The Wallhaven mapping. A search answer names no photographer and carries no
+/// caption, so most of this is about what the app must *not* claim.
+@Suite("Wallhaven mapping")
+struct WallhavenMappingTests {
+
+    @Test("A wallpaper is credited to nobody, because the API names nobody")
+    func namesNobody() throws {
+        let artwork = try #require(makeWallhavenArtwork())
+        #expect(artwork.creator == nil)
+        // An empty `source` is the common case and must not become a link.
+        #expect(artwork.creatorURL == nil)
+        #expect(artwork.downloadLocation == nil)
+        #expect(artwork.webURL?.absoluteString == "https://wallhaven.cc/w/4olrgp")
+    }
+
+    @Test("The link the uploader credited is offered when there is one")
+    func keepsTheOriginalSource() throws {
+        let artwork = try #require(
+            makeWallhavenArtwork(source: "https://www.artstation.com/artwork/ZG4GeN")
+        )
+        #expect(artwork.creatorURL?.absoluteString == "https://www.artstation.com/artwork/ZG4GeN")
+        // Still nobody named: a URL is not an author.
+        #expect(artwork.creator == nil)
+    }
+
+    @Test("The ID stands in as a title, so a history row is not fifty identical lines")
+    func idIsTheLabel() throws {
+        let artwork = try #require(makeWallhavenArtwork())
+        #expect(artwork.title == "4olrgp")
+        #expect(artwork.shortLabel == "4olrgp")
+    }
+
+    @Test("A stored Wallhaven link is opened as it was saved")
+    func noUTMRewriting() throws {
+        // `sourceURL` rebuilds Unsplash links to carry the current application
+        // name. Nothing else has UTM parameters to rebuild, and adding any
+        // would be inventing a referral that was never registered.
+        let artwork = try #require(makeWallhavenArtwork())
+        #expect(artwork.sourceURL == artwork.webURL)
+    }
+
+    @Test("A real search payload decodes, fields and all")
+    func decodesLiveShape() throws {
+        // Captured from wallhaven.cc/api/v1/search. The response carries far
+        // more than this — views, colours, file size — and decoding has to keep
+        // ignoring all of it rather than break on a field being added.
+        let json = Data("""
+        [
+          {
+            "id": "4olrgp",
+            "url": "https://wallhaven.cc/w/4olrgp",
+            "short_url": "https://whvn.cc/4olrgp",
+            "views": 3708,
+            "source": "",
+            "purity": "sfw",
+            "category": "general",
+            "dimension_x": 1936,
+            "dimension_y": 2592,
+            "file_type": "image/jpeg",
+            "path": "https://w.wallhaven.cc/full/4o/wallhaven-4olrgp.jpg",
+            "thumbs": { "large": "https://th.wallhaven.cc/lg/4o/4olrgp.jpg" }
+          },
+          {
+            "id": "95mq9d",
+            "url": "https://wallhaven.cc/w/95mq9d",
+            "source": "https://unsplash.com/photos/vddccTqwal8",
+            "purity": "sfw",
+            "category": "general",
+            "file_type": "image/png",
+            "path": "https://w.wallhaven.cc/full/95/wallhaven-95mq9d.png",
+            "thumbs": { "large": "https://th.wallhaven.cc/lg/95/95mq9d.jpg" }
+          }
+        ]
+        """.utf8)
+
+        let entries = try JSONDecoder().decode([WallhavenClient.Entry].self, from: json)
+        let artworks = entries.compactMap(\.artwork)
+
+        #expect(artworks.count == 2)
+        #expect(artworks[0].creatorURL == nil)
+        #expect(artworks[1].creatorURL?.absoluteString == "https://unsplash.com/photos/vddccTqwal8")
+        #expect(artworks[1].fileExtension == "png")
+        #expect(artworks.allSatisfy { $0.provider == .wallhaven })
     }
 }
 

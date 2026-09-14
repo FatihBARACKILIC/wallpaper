@@ -119,7 +119,7 @@ private struct SourcesSettings: View {
 
     var body: some View {
         VStack(alignment: .leading) {
-            SourceEditor(settings: manager.settings, client: manager.client)
+            SourceEditor(settings: manager.settings, client: manager.client, wallhaven: manager.wallhaven)
         }
         .padding(20)
     }
@@ -318,6 +318,8 @@ private struct AccountSettings: View {
                 unsplash
                 Divider()
                 nasa
+                Divider()
+                wallhaven
             }
             .padding(20)
         }
@@ -399,6 +401,26 @@ private struct AccountSettings: View {
             }
             .font(.callout.weight(.medium))
         }
+    }
+
+    // MARK: - Wallhaven
+
+    /// Here only to answer the question the other two sections raise. Wallhaven
+    /// serves the safe-for-work wallpapers this app asks for to anonymous
+    /// callers, so there is no key to store and none is ever sent.
+    private var wallhaven: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Wallhaven")
+                .font(.headline)
+            Label("No key needed.", systemImage: "checkmark.circle.fill")
+                .font(.callout)
+                .foregroundStyle(.green)
+            Text("Wallhaven sources work straight away. The app asks only for safe-for-work wallpapers, and never sends an API key.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// A key already in the keychain, shown masked — the value itself is never

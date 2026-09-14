@@ -77,12 +77,18 @@ struct SourceParsingTests {
         #expect(Source(kind: .collection, value: "1234", title: "Wallpapers").shortLabel == "c/Wallpapers")
     }
 
-    @Test("Only an unresolved collection needs a lookup")
+    @Test("Only an ID the user cannot read needs a lookup")
     func needsTitle() {
         #expect(Source(kind: .collection, value: "1234").needsTitle)
         #expect(!Source(kind: .collection, value: "1234", title: "Wallpapers").needsTitle)
         #expect(!Source(kind: .topic, value: "nature").needsTitle)
         #expect(!Source(kind: .search, value: "forest").needsTitle)
+
+        // A Wallhaven tag is a number too; a Wallhaven query is already words.
+        #expect(Source(kind: .wallhaven, value: "id:37").needsTitle)
+        #expect(!Source(kind: .wallhaven, value: "id:37", title: "nature").needsTitle)
+        #expect(!Source(kind: .wallhaven, value: "mountains").needsTitle)
+        #expect(!Source.wallhaven().needsTitle)
     }
 
     // MARK: - NASA APOD
@@ -141,6 +147,59 @@ struct SourceParsingTests {
         #expect(Source.Kind.collection.provider == .unsplash)
         #expect(Source.Kind.search.provider == .unsplash)
         #expect(Source.Kind.apod.provider == .apod)
+        #expect(Source.Kind.wallhaven.provider == .wallhaven)
         #expect(Source.Kind.folder.provider == .local)
+    }
+
+    // MARK: - Wallhaven
+
+    @Test("Wallhaven has to be named, because plain words are an Unsplash search")
+    func wallhavenByName() {
+        check("wallhaven", .wallhaven, "")
+        check("Wallhaven", .wallhaven, "")
+        check("wallhaven.cc", .wallhaven, "")
+        check("wallhaven mountains at dusk", .wallhaven, "mountains at dusk")
+        // The query is trimmed at the ends and left alone in the middle.
+        check("Wallhaven  inner  spacing kept ", .wallhaven, "inner  spacing kept")
+    }
+
+    @Test("A word that merely starts with wallhaven stays a search")
+    func wallhavenDoesNotSwallowSearches() {
+        check("wallhavens", .search, "wallhavens")
+        check("wallhaven-inspired", .search, "wallhaven-inspired")
+    }
+
+    @Test("Pasted Wallhaven links keep their query")
+    func wallhavenLinks() {
+        check("https://wallhaven.cc/search?q=misty%20forest", .wallhaven, "misty forest")
+        check("wallhaven.cc/search?q=forest&categories=111", .wallhaven, "forest")
+        // A tag page is a search for that tag, which the API spells `id:<n>`.
+        check("https://wallhaven.cc/tag/37", .wallhaven, "id:37")
+    }
+
+    @Test("A Wallhaven link that is not a query is all of Wallhaven")
+    func wallhavenWholeSite() {
+        // /latest, /hot and a single wallpaper's page are none of them a
+        // search, and refusing them would drop the user back to an Unsplash
+        // search for the URL they pasted.
+        check("https://wallhaven.cc/latest", .wallhaven, "")
+        check("https://wallhaven.cc/w/4olrgp", .wallhaven, "")
+        check("https://whvn.cc/4olrgp", .wallhaven, "")
+    }
+
+    @Test("All of Wallhaven is named rather than shown as an empty label")
+    func wallhavenWholeSiteTitle() {
+        #expect(Source.wallhaven().shortLabel == "w/Everything")
+        #expect(Source.wallhaven(query: "forest").shortLabel == "w/forest")
+        #expect(Source.wallhaven(query: "  forest  ").value == "forest")
+    }
+
+    @Test("Only a numeric tag is a tag")
+    func wallhavenTagID() {
+        #expect(Source(kind: .wallhaven, value: "id:37").wallhavenTagID == "37")
+        #expect(Source(kind: .wallhaven, value: "id:").wallhavenTagID == nil)
+        #expect(Source(kind: .wallhaven, value: "id:not-a-number").wallhavenTagID == nil)
+        #expect(Source(kind: .wallhaven, value: "identity").wallhavenTagID == nil)
+        #expect(Source(kind: .search, value: "id:37").wallhavenTagID == nil)
     }
 }

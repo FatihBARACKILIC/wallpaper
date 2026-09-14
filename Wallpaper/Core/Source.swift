@@ -9,6 +9,10 @@ struct Source: Codable, Identifiable, Hashable {
         case search
         /// NASA's Astronomy Picture of the Day.
         case apod
+        /// A Wallhaven search. Tags, colours and ratios are all query
+        /// parameters on the one endpoint Wallhaven has, so a tag is this kind
+        /// too — with `id:37` as its value.
+        case wallhaven
         /// A folder of the user's own photos.
         case folder
 
@@ -18,6 +22,7 @@ struct Source: Codable, Identifiable, Hashable {
             case .collection: "Collection"
             case .search: "Search"
             case .apod: "NASA"
+            case .wallhaven: "Wallhaven"
             case .folder: "Folder"
             }
         }
@@ -29,6 +34,7 @@ struct Source: Codable, Identifiable, Hashable {
             case .collection: "c"
             case .search: "s"
             case .apod: "n"
+            case .wallhaven: "w"
             case .folder: "f"
             }
         }
@@ -39,6 +45,7 @@ struct Source: Codable, Identifiable, Hashable {
             switch self {
             case .topic, .collection, .search: .unsplash
             case .apod: .apod
+            case .wallhaven: .wallhaven
             case .folder: .local
             }
         }
@@ -50,6 +57,18 @@ struct Source: Codable, Identifiable, Hashable {
 
     static let apod = Source(kind: .apod, value: apodValue, title: "Astronomy Picture of the Day")
 
+    /// A Wallhaven search. An empty query is the whole site, which is what
+    /// `wallhaven` on its own means; it needs a title because `w/` with nothing
+    /// after it reads as a mistake.
+    static func wallhaven(query: String = "") -> Source {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return Source(
+            kind: .wallhaven,
+            value: trimmed,
+            title: trimmed.isEmpty ? "Everything" : nil
+        )
+    }
+
     static func folder(at url: URL) -> Source {
         Source(
             kind: .folder,
@@ -60,7 +79,8 @@ struct Source: Codable, Identifiable, Hashable {
 
     var id = UUID()
     var kind: Kind
-    /// Topic slug, collection ID, search query, `apod`, or a folder path.
+    /// Topic slug, collection ID, search query, `apod`, a Wallhaven query, or
+    /// a folder path.
     var value: String
     /// Human name. Collections are identified by a numeric ID, which tells the
     /// user nothing on its own; a folder shows its own name rather than a path
@@ -78,15 +98,26 @@ struct Source: Codable, Identifiable, Hashable {
     var displayName: String {
         switch kind {
         case .apod: "NASA Astronomy Picture of the Day"
+        case .wallhaven: "Wallhaven: \(title ?? value)"
         case .folder: "Folder: \(title ?? value)"
         default: "\(kind.displayName): \(title ?? value)"
         }
     }
 
-    /// Only a collection is unreadable without a lookup; a slug, a query and a
+    /// Only an ID is unreadable without a lookup — an Unsplash collection, or
+    /// a Wallhaven tag, which the site writes as `id:37`. A slug, a query and a
     /// folder name already say what they are.
     var needsTitle: Bool {
-        kind == .collection && title == nil
+        guard title == nil else { return false }
+        return kind == .collection || (kind == .wallhaven && wallhavenTagID != nil)
+    }
+
+    /// The numeric tag this Wallhaven source searches for, if it searches for
+    /// one rather than for words.
+    var wallhavenTagID: String? {
+        guard kind == .wallhaven, value.hasPrefix("id:") else { return nil }
+        let id = String(value.dropFirst(3))
+        return id.allSatisfy(\.isNumber) && !id.isEmpty ? id : nil
     }
 
     /// The page this source came from, for the "open" button on its row.
@@ -98,6 +129,11 @@ struct Source: Codable, Identifiable, Hashable {
             value.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
                 .flatMap { UnsplashAttribution.link("https://unsplash.com/s/photos/\($0)") }
         case .apod: URL(string: "https://apod.nasa.gov/apod/astropix.html")
+        case .wallhaven:
+            value.isEmpty
+                ? URL(string: "https://wallhaven.cc/")
+                : value.addingPercentEncoding(withAllowedCharacters: .alphanumerics)
+                    .flatMap { URL(string: "https://wallhaven.cc/search?q=\($0)") }
         case .folder: folderURL
         }
     }
@@ -112,15 +148,25 @@ extension Source {
     ///   unsplash.com/collections/1234/x  -> collection "1234"
     ///   unsplash.com/s/photos/mountains  -> search "mountains"
     ///   apod.nasa.gov/…                  -> NASA APOD
+    ///   wallhaven                        -> all of Wallhaven
+    ///   wallhaven mountains              -> Wallhaven search "mountains"
+    ///   wallhaven.cc/search?q=mountains  -> Wallhaven search "mountains"
+    ///   wallhaven.cc/tag/37              -> Wallhaven tag "id:37"
     ///   /Users/me/Pictures/Iceland       -> that folder
     ///
-    /// Anything else is treated as a search query.
+    /// Anything else is treated as an Unsplash search query — the fallback a
+    /// bare word has always had, which is why Wallhaven has to be named.
     init?(input rawInput: String) {
         let input = rawInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !input.isEmpty else { return nil }
 
         if Self.namesAPOD(input) {
             self = .apod
+            return
+        }
+
+        if let wallhaven = Self.parseWallhaven(input) {
+            self = wallhaven
             return
         }
 
@@ -146,6 +192,43 @@ extension Source {
         let candidate = input.contains("://") ? input : "https://\(input)"
         guard let host = URLComponents(string: candidate)?.host?.lowercased() else { return false }
         return host == "apod.nasa.gov" || host.hasSuffix(".apod.nasa.gov")
+    }
+
+    /// A Wallhaven source, named or pasted.
+    ///
+    /// Naming it is not a convenience: plain text falls through to an Unsplash
+    /// search, so "wallhaven mountains" is the only way to type a Wallhaven
+    /// query rather than paste one. It shadows an Unsplash search for the word
+    /// "wallhaven", which is the same trade "nasa" already makes.
+    private static func parseWallhaven(_ input: String) -> Source? {
+        let normalised = input.lowercased()
+        if normalised == "wallhaven" || normalised == "wallhaven.cc" {
+            return .wallhaven()
+        }
+        if normalised.hasPrefix("wallhaven ") {
+            return .wallhaven(query: String(input.dropFirst("wallhaven ".count)))
+        }
+
+        let candidate = input.contains("://") ? input : "https://\(input)"
+        guard let components = URLComponents(string: candidate),
+              let host = components.host?.lowercased(),
+              host == "wallhaven.cc" || host.hasSuffix(".wallhaven.cc") || host == "whvn.cc"
+        else { return nil }
+
+        let path = components.path.split(separator: "/").map(String.init)
+
+        // /tag/<id> is a search for that tag; the API spells it `id:<n>`.
+        if path.first == "tag", let id = path.dropFirst().first, id.allSatisfy(\.isNumber) {
+            return Source(kind: .wallhaven, value: "id:\(id)")
+        }
+
+        if let query = components.queryItems?.first(where: { $0.name == "q" })?.value?.nilIfEmpty {
+            return .wallhaven(query: query)
+        }
+
+        // /latest, /hot, /toplist, a single wallpaper's page — none of them is a
+        // query, so the honest reading is "Wallhaven, all of it".
+        return .wallhaven()
     }
 
     /// A path or `file://` URL that really is a directory on this Mac. Checking

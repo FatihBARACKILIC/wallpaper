@@ -10,12 +10,14 @@ struct Artwork: Codable, Hashable, Identifiable, Sendable {
     enum Provider: String, Codable, Sendable {
         case unsplash
         case apod
+        case wallhaven
         case local
 
         var displayName: String {
             switch self {
             case .unsplash: "Unsplash"
             case .apod: "NASA APOD"
+            case .wallhaven: "Wallhaven"
             case .local: "your Mac"
             }
         }
@@ -42,11 +44,14 @@ struct Artwork: Codable, Hashable, Identifiable, Sendable {
         }
     }
 
-    /// Unique within its provider: an Unsplash ID, an APOD date, a file path.
+    /// Unique within its provider: an Unsplash or Wallhaven ID, an APOD date,
+    /// a file path.
     let id: String
     let provider: Provider
     let origin: Origin
-    /// Caption, APOD title, or the file's own name.
+    /// Caption, APOD title, or the file's own name. A Wallhaven upload has
+    /// none of those, so it carries its ID — which is what the site names the
+    /// file after.
     let title: String?
     /// Photographer or copyright holder. `nil` when nobody is named — a NASA
     /// image with no `copyright` field is public domain, and a file on disk
@@ -61,8 +66,9 @@ struct Artwork: Codable, Hashable, Identifiable, Sendable {
     /// Identity across providers, for the lists that remember photos.
     ///
     /// `id` alone will not do: it is unique only *within* a provider, and the
-    /// three namespaces overlap in shape — an APOD entry is a date, a folder
-    /// photo is a path. Two photos are the same photo when both parts match.
+    /// namespaces overlap in shape — an APOD entry is a date, a folder photo is
+    /// a path, and an Unsplash and a Wallhaven ID are the same short string of
+    /// letters. Two photos are the same photo when both parts match.
     var key: String { "\(provider.rawValue):\(id)" }
 
     /// Where this photo came from, ready to open.
@@ -80,9 +86,9 @@ struct Artwork: Codable, Hashable, Identifiable, Sendable {
     }
 
     /// One line naming this photo, for a list row. Falls back through what the
-    /// providers actually give: an Unsplash caption or APOD title, then the
-    /// photographer, then the provider itself for a public-domain NASA image
-    /// with no title at all.
+    /// providers actually give: an Unsplash caption, an APOD title or the
+    /// Wallhaven ID, then the photographer, then the provider itself for a
+    /// public-domain NASA image with no title at all.
     var shortLabel: String {
         title ?? creator ?? provider.displayName
     }
@@ -110,8 +116,9 @@ struct Artwork: Codable, Hashable, Identifiable, Sendable {
     /// A URL for the actual bytes, or `nil` for a file already on disk.
     ///
     /// Only Unsplash resizes server-side: its CDN takes `w`/`h` and returns a
-    /// screen-sized JPEG instead of a 50 MB original. APOD serves fixed files,
-    /// so the resolution setting has nothing to act on there.
+    /// screen-sized JPEG instead of a 50 MB original. APOD and Wallhaven serve
+    /// fixed files, so the resolution setting has nothing to act on there —
+    /// Wallhaven is kept large by asking `atleast` of the search instead.
     func downloadURL(pixelSize: CGSize?) -> URL? {
         guard case .remote(let remote) = origin else { return nil }
         guard provider == .unsplash, var components = URLComponents(url: remote, resolvingAgainstBaseURL: false)
@@ -140,8 +147,8 @@ struct Artwork: Codable, Hashable, Identifiable, Sendable {
     }
 
     /// The extension a downloaded copy should carry. Unsplash is asked for JPEG
-    /// explicitly; APOD serves whatever it has, and a PNG saved as `.jpg` would
-    /// be a lie to every other app that reads the folder.
+    /// explicitly; APOD and Wallhaven serve whatever they have, and a PNG saved
+    /// as `.jpg` would be a lie to every other app that reads the folder.
     var fileExtension: String {
         guard provider != .unsplash else { return "jpg" }
         let candidate = origin.url.pathExtension.lowercased()

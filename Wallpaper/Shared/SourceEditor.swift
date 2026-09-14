@@ -5,6 +5,7 @@ import SwiftUI
 struct SourceEditor: View {
     @Bindable var settings: SettingsStore
     let client: UnsplashClient
+    let wallhaven: WallhavenClient
 
     @State private var input = ""
     @State private var resolveError: String?
@@ -19,7 +20,7 @@ struct SourceEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                TextField("Topic, search term, or a pasted Unsplash link", text: $input)
+                TextField("Search term, or a pasted Unsplash or Wallhaven link", text: $input)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit(add)
 
@@ -49,6 +50,14 @@ struct SourceEditor: View {
                 .disabled(settings.settings.sources.contains { $0.kind == .apod })
                 .help("NASA's Astronomy Picture of the Day")
 
+                Button {
+                    add(.wallhaven())
+                } label: {
+                    Label("Add Wallhaven", systemImage: "mountain.2")
+                }
+                .disabled(settings.settings.sources.contains { $0.kind == .wallhaven && $0.value.isEmpty })
+                .help("All of Wallhaven. No key needed. For one search, type \"wallhaven mountains\" above.")
+
                 Spacer()
             }
 
@@ -72,7 +81,7 @@ struct SourceEditor: View {
                     .foregroundStyle(.orange)
             }
 
-            Text("Each wallpaper change picks one of these at random. t/ is a topic, c/ a collection, s/ a search, f/ a folder on this Mac, n/ NASA.")
+            Text("Each wallpaper change picks one of these at random. t/ is a topic, c/ a collection, s/ a search, w/ Wallhaven, f/ a folder on this Mac, n/ NASA.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -177,6 +186,7 @@ struct SourceEditor: View {
         case .collection: "rectangle.stack"
         case .search: "magnifyingglass"
         case .apod: "sparkles"
+        case .wallhaven: "mountain.2"
         case .folder: "folder"
         }
     }
@@ -219,12 +229,17 @@ struct SourceEditor: View {
         settings.update { $0.sources.removeAll { $0.id == source.id } }
     }
 
-    /// Turns collection IDs into their names. Runs once per collection; the
-    /// title is stored with the source.
+    /// Turns the IDs a user cannot read — an Unsplash collection, a Wallhaven
+    /// tag — into their names. Runs once per source; the title is stored with
+    /// it, so the lookup never happens again.
     private func resolveMissingTitles() async {
         for source in settings.settings.sources where source.needsTitle {
             do {
-                let title = try await client.collectionTitle(for: source.value)
+                let title = if let tag = source.wallhavenTagID {
+                    try await wallhaven.tagName(for: tag)
+                } else {
+                    try await client.collectionTitle(for: source.value)
+                }
                 settings.update { settings in
                     guard let index = settings.sources.firstIndex(where: { $0.id == source.id })
                     else { return }
@@ -232,7 +247,7 @@ struct SourceEditor: View {
                 }
                 resolveError = nil
             } catch {
-                resolveError = "Couldn't look up collection \(source.value): \(error.localizedDescription)"
+                resolveError = "Couldn't look up \(source.shortLabel): \(error.localizedDescription)"
             }
         }
     }
