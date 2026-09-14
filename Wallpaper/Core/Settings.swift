@@ -126,6 +126,35 @@ struct StorageLimit: Codable, Hashable {
     static let unlimited = StorageLimit(isEnabled: false)
 }
 
+/// Match the photo to the sky: light ones while the sun is up, dark ones after
+/// it sets.
+///
+/// Off by default, because it needs a location and the app should not ask for
+/// one unprompted. A coordinate typed by hand is as good as a resolved one —
+/// `isAutomatic` only records which it was, so the settings row can say so and
+/// a re-resolve does not quietly overwrite what the user typed.
+struct SunlightMatching: Codable, Hashable {
+    var isEnabled = false
+    var coordinate: GeoCoordinate?
+    var updatedAt: Date?
+    var isAutomatic = true
+
+    /// On, and with somewhere to compute from.
+    var isUsable: Bool {
+        isEnabled && coordinate?.isValid == true
+    }
+
+    /// A resolved coordinate this old is worth replacing on the next launch.
+    /// A desktop never moves and a laptop rarely moves far, so this is about
+    /// the one user who took theirs to another continent — not about accuracy.
+    static let staleAfter: TimeInterval = 30 * 24 * 60 * 60
+
+    var isStale: Bool {
+        guard isAutomatic, let updatedAt else { return coordinate == nil }
+        return Date().timeIntervalSince(updatedAt) > Self.staleAfter
+    }
+}
+
 struct AppSettings: Codable, Hashable {
     var sources: [Source] = []
     /// The name this user registered their application under on Unsplash.
@@ -141,6 +170,8 @@ struct AppSettings: Codable, Hashable {
     /// is on, a change on an expensive or constrained path uses only what costs
     /// nothing — a folder on this Mac, or a photo already downloaded.
     var pauseOnExpensiveNetwork = true
+    /// Pick photos that match the sky: light by day, dark by night.
+    var sunlight = SunlightMatching()
     var hasCompletedOnboarding = false
 
     init() {}
@@ -169,6 +200,7 @@ struct AppSettings: Codable, Hashable {
         launchAtLogin = try container.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? fallback.launchAtLogin
         pauseOnExpensiveNetwork = try container.decodeIfPresent(Bool.self, forKey: .pauseOnExpensiveNetwork)
             ?? fallback.pauseOnExpensiveNetwork
+        sunlight = try container.decodeIfPresent(SunlightMatching.self, forKey: .sunlight) ?? fallback.sunlight
         hasCompletedOnboarding = try container.decodeIfPresent(Bool.self, forKey: .hasCompletedOnboarding)
             ?? fallback.hasCompletedOnboarding
     }

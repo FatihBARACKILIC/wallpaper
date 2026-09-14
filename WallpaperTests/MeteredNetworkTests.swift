@@ -15,6 +15,7 @@ struct MeteredNetworkTests {
         #expect(Artwork.Provider.local.needsDownload == false)
         #expect(Artwork.Provider.unsplash.needsDownload == true)
         #expect(Artwork.Provider.apod.needsDownload == true)
+        #expect(Artwork.Provider.wallhaven.needsDownload == true)
     }
 
     @Test("A hotspot and Low Data Mode both count as metered")
@@ -59,6 +60,9 @@ struct MeteredNetworkTests {
         #expect(decoded.hasCompletedOnboarding)
         // The new field takes its default rather than failing the whole decode.
         #expect(decoded.pauseOnExpensiveNetwork)
+        // And so does every one added since — this blob predates them all.
+        #expect(decoded.sunlight == SunlightMatching())
+        #expect(!decoded.sunlight.isEnabled)
     }
 
     @Test("An empty object decodes to the defaults instead of throwing")
@@ -77,5 +81,62 @@ struct MeteredNetworkTests {
 
         #expect(decoded.pauseOnExpensiveNetwork == false)
         #expect(decoded == settings)
+    }
+
+    @Test("A location survives a round trip, typed or resolved")
+    func sunlightRoundTrip() throws {
+        var settings = AppSettings()
+        settings.sunlight = SunlightMatching(
+            isEnabled: true,
+            coordinate: GeoCoordinate(latitude: 41.0082, longitude: 28.9784),
+            updatedAt: Date(timeIntervalSince1970: 1_789_000_000),
+            isAutomatic: false
+        )
+
+        let data = try JSONEncoder().encode(settings)
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: data)
+
+        #expect(decoded.sunlight == settings.sunlight)
+        #expect(decoded.sunlight.isUsable)
+    }
+
+    @Test("Sky matching stays off until there is somewhere to compute from")
+    func sunlightNeedsALocation() {
+        #expect(!SunlightMatching().isUsable)
+        // On, but nowhere to put the sun.
+        #expect(!SunlightMatching(isEnabled: true).isUsable)
+        // A coordinate CoreLocation could not resolve is not a location.
+        #expect(!SunlightMatching(
+            isEnabled: true, coordinate: GeoCoordinate(latitude: 0, longitude: 0)
+        ).isUsable)
+        #expect(SunlightMatching(
+            isEnabled: true, coordinate: GeoCoordinate(latitude: 41, longitude: 29)
+        ).isUsable)
+    }
+
+    @Test("Only a resolved location goes stale; a typed one is never overwritten")
+    func staleness() {
+        let old = Date().addingTimeInterval(-60 * 24 * 60 * 60)
+        #expect(SunlightMatching(
+            isEnabled: true,
+            coordinate: GeoCoordinate(latitude: 41, longitude: 29),
+            updatedAt: old,
+            isAutomatic: true
+        ).isStale)
+
+        // Typed by hand: the user meant it, and no launch re-resolves over it.
+        #expect(!SunlightMatching(
+            isEnabled: true,
+            coordinate: GeoCoordinate(latitude: 41, longitude: 29),
+            updatedAt: old,
+            isAutomatic: false
+        ).isStale)
+
+        #expect(!SunlightMatching(
+            isEnabled: true,
+            coordinate: GeoCoordinate(latitude: 41, longitude: 29),
+            updatedAt: Date(),
+            isAutomatic: true
+        ).isStale)
     }
 }

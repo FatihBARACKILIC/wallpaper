@@ -137,6 +137,10 @@ final class WallhavenClient {
         /// Where the uploader said the image came from — an ArtStation or
         /// Unsplash link, often enough. Empty for most wallpapers.
         let source: String?
+        /// The five most prominent colours, most prominent first. Wallhaven
+        /// sends these with every search result, so how light a wallpaper is
+        /// costs nothing to know before downloading it.
+        let colors: [String]?
 
         /// `nil` when the file URL will not parse; nothing else here can fail.
         var artwork: Artwork? {
@@ -156,7 +160,8 @@ final class WallhavenClient {
                 // that is the nearest thing to an author this provider has.
                 creatorURL: source?.nilIfEmpty.flatMap { URL(string: $0) },
                 webURL: URL(string: url),
-                downloadLocation: nil
+                downloadLocation: nil,
+                lightness: colors.flatMap { ImageBrightness.lightness(ofPalette: $0) }
             )
         }
     }

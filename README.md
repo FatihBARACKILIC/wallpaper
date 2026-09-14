@@ -14,6 +14,7 @@ Built to stay out of the way: no Dock icon, no windows unless you open them, and
 - **Your own API keys** — stored encrypted in the macOS Keychain, one per service
 - **Flexible schedule** — nine intervals from 5 minutes to 1 week, or manual only
 - **Kind to your data plan** — on cellular or a hotspot it stops downloading, keeps rotating your own folders and photos already saved, and waits for Wi-Fi (macOS spots an iPhone hotspot by itself; for an Android one, switch on Low Data Mode for that network)
+- **Matches the sky** — optional: light photos while the sun is up, dark ones after it sets, from sunrise and sunset worked out on this Mac
 - **Multi-monitor** — same photo on every screen, or a different photo per screen
 - **Every desktop** — Spaces you aren't looking at are updated as soon as you switch to them
 - **Skip button** — don't like the current photo? Change it instantly
@@ -59,6 +60,20 @@ The same instructions are available inside the app, during setup and in Settings
 3. Paste it into **Settings › Account › NASA**
 
 A personal key allows 1000 requests per hour. A wallpaper change costs one, because APOD returns every photo in a single request and has no download to report.
+
+## Matching photos to the sky
+
+**Settings › General › Sunlight** turns on "Match photos to the sky": bright photos while the sun is up, dark ones after it sets, sliding through the middle at dawn and dusk instead of flipping at a threshold.
+
+It needs to know where you are, because sunrise at the summer solstice is 04:26 in Edinburgh and 06:02 in Athens. Press **Locate** and macOS asks for permission once; the coordinate is stored in your settings, is only ever asked for to about three kilometres, and never leaves this Mac — sunrise and sunset are arithmetic, not a web service. If you would rather not grant location access, press **Enter…** and type a latitude and longitude. The row shows today's sunrise and sunset back, so you can see at a glance that the location is right.
+
+Two things keep it cheap. Unsplash and Wallhaven send the dominant colours of every photo *with the search result*, so a whole batch is ranked before a single byte is downloaded — matching the sky costs no extra API requests. Photos from NASA and from your own folders carry no such hint, so those are measured from the file itself.
+
+It is a preference, not a filter. If nothing in a batch suits the hour the wallpaper still changes — a desktop that freezes at dusk would be a worse outcome than a bright photo at night.
+
+If macOS never shows the permission prompt, look for Wallpaper in System Settings › Privacy & Security › Location Services and switch it on there — or just type a coordinate, which works identically.
+
+Inside the polar circles the sun does not rise or set for months at a time. The app says so rather than inventing a time, and keeps working: it tracks how high the sun is, not whether it has risen.
 
 ## Using Wallhaven
 
@@ -113,6 +128,8 @@ By default the cache is capped at 100 photos or 1 GB, whichever comes first, evi
 - the "open at login" registration
 
 It optionally moves the app itself to the Trash, and puts your desktop back to the macOS default wallpaper first — Spaces you aren't looking at keep the old photo until you pick one yourself in System Settings. Anything it fails to remove is listed with its path so you can finish by hand.
+
+If you granted location access, macOS remembers that in its own privacy database, which no app may write to. Revoke it in System Settings › Privacy & Security › Location Services if you want it gone.
 
 Two things it deliberately leaves alone. macOS keeps a metadata-only stub at `~/Library/Containers/com.barackilic.Wallpaper`; removing it would need Full Disk Access, which this app should never ask for — drag it to the Trash in Finder if you want it gone. And your Unsplash application on unsplash.com is yours: delete it there. Your own photo folders are never touched — the app only ever reads them.
 

@@ -307,6 +307,12 @@ struct MenuContent: View {
             Text(nextChangeDescription)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            if let sky = manager.currentSunlight {
+                Label(skyDescription(sky), systemImage: skySymbol(sky))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
@@ -354,6 +360,24 @@ struct MenuContent: View {
         return WallpaperManager.SetupError
             .noUsableSources(manager.settings.settings.sources)
             .localizedDescription
+    }
+
+    /// Only shown when the user turned sky matching on, so it explains a
+    /// setting they chose rather than announcing one they did not.
+    private func skyDescription(_ sky: Sunlight) -> String {
+        switch sky.phase {
+        case .day: "Daylight — picking brighter photos"
+        case .twilight: "Twilight — picking mid-toned photos"
+        case .night: "Night — picking darker photos"
+        }
+    }
+
+    private func skySymbol(_ sky: Sunlight) -> String {
+        switch sky.phase {
+        case .day: "sun.max"
+        case .twilight: "sun.horizon"
+        case .night: "moon.stars"
+        }
     }
 
     private var isOffline: Bool {

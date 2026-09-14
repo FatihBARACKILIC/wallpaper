@@ -34,12 +34,16 @@ struct Photo: Codable, Hashable, Identifiable, Sendable {
     let height: Int
     let description: String?
     let altDescription: String?
+    /// The photo's dominant colour, `#0c2a3a`. Optional because it is absent
+    /// from the shape this type used to be persisted in, which still has to
+    /// decode — see `Artwork.init(from:)`.
+    let color: String?
     let urls: URLs
     let links: Links
     let user: User
 
     enum CodingKeys: String, CodingKey {
-        case id, width, height, description, urls, links, user
+        case id, width, height, description, color, urls, links, user
         case altDescription = "alt_description"
     }
 
@@ -66,7 +70,10 @@ struct Photo: Codable, Hashable, Identifiable, Sendable {
             creator: user.name,
             creatorURL: photographerURL,
             webURL: webURL,
-            downloadLocation: links.downloadLocation
+            downloadLocation: links.downloadLocation,
+            // Sent with every search result, so a batch can be ranked against
+            // the sky without downloading any of it.
+            lightness: color.flatMap(ImageBrightness.lightness(ofHex:))
         )
     }
 }

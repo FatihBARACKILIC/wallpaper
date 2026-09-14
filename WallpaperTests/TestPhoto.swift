@@ -9,6 +9,7 @@ func makePhoto(
     username: String = "aleskrivec",
     description: String? = nil,
     altDescription: String? = nil,
+    color: String? = nil,
     raw: String = "https://images.unsplash.com/photo-1?ixid=abc",
     full: String = "https://images.unsplash.com/photo-1?fm=jpg"
 ) -> Photo {
@@ -18,6 +19,7 @@ func makePhoto(
         height: 4000,
         description: description,
         altDescription: altDescription,
+        color: color,
         urls: Photo.URLs(raw: raw, full: full),
         links: Photo.Links(
             html: "https://unsplash.com/photos/\(id)",
@@ -36,9 +38,10 @@ func makeArtwork(
     id: String = "Ry9WBo3qmoc",
     name: String = "Ales Krivec",
     altDescription: String? = nil,
+    color: String? = nil,
     raw: String = "https://images.unsplash.com/photo-1?ixid=abc"
 ) -> Artwork {
-    makePhoto(id: id, name: name, altDescription: altDescription, raw: raw).artwork
+    makePhoto(id: id, name: name, altDescription: altDescription, color: color, raw: raw).artwork
 }
 
 /// An APOD picture. `hdurl` is deliberately separate from `url`: the client is
@@ -66,13 +69,15 @@ func makeAPODArtwork(
 func makeWallhavenArtwork(
     id: String = "4olrgp",
     path: String = "https://w.wallhaven.cc/full/4o/wallhaven-4olrgp.jpg",
-    source: String? = ""
+    source: String? = "",
+    colors: [String]? = nil
 ) -> Artwork? {
     WallhavenClient.Entry(
         id: id,
         url: "https://wallhaven.cc/w/\(id)",
         path: path,
-        source: source
+        source: source,
+        colors: colors
     ).artwork
 }
 

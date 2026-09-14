@@ -130,6 +130,19 @@ final class ImageCache {
         if index.count != before { saveIndex() }
     }
 
+    /// Updates what the index says a file is.
+    ///
+    /// Used for the one fact that can only be learned after the download: how
+    /// light the photo actually is. The providers that send a dominant colour
+    /// give a good enough guess to rank a batch by, but the file itself is the
+    /// truth, and the index is what the cache fallback ranks from later.
+    func record(_ artwork: Artwork, at url: URL) {
+        let filename = url.lastPathComponent
+        guard index[filename] != artwork else { return }
+        index[filename] = artwork
+        saveIndex()
+    }
+
     // MARK: - Downloading
 
     /// Downloads `artwork` sized for `pixelSize` — or at its own size when that

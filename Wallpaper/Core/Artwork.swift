@@ -62,6 +62,14 @@ struct Artwork: Codable, Hashable, Identifiable, Sendable {
     let webURL: URL?
     /// Unsplash only: the endpoint that must be hit once the photo is used.
     let downloadLocation: String?
+    /// How light or dark this photo is, 0…1 on the CIE L\* scale, or `nil` when
+    /// nobody has worked it out yet.
+    ///
+    /// Filled in from the dominant colours Unsplash and Wallhaven send with
+    /// every search result — which is what lets a whole batch be ranked against
+    /// the sky before a single byte is downloaded — and measured from the file
+    /// for the providers that send nothing. See `ImageBrightness`.
+    let lightness: Double?
 
     /// Identity across providers, for the lists that remember photos.
     ///
@@ -101,7 +109,8 @@ struct Artwork: Codable, Hashable, Identifiable, Sendable {
         creator: String? = nil,
         creatorURL: URL? = nil,
         webURL: URL? = nil,
-        downloadLocation: String? = nil
+        downloadLocation: String? = nil,
+        lightness: Double? = nil
     ) {
         self.id = id
         self.provider = provider
@@ -111,6 +120,24 @@ struct Artwork: Codable, Hashable, Identifiable, Sendable {
         self.creatorURL = creatorURL
         self.webURL = webURL
         self.downloadLocation = downloadLocation
+        self.lightness = lightness
+    }
+
+    /// The same photo with its brightness filled in — `Artwork` is otherwise
+    /// immutable, and measuring a file is the one thing that can only happen
+    /// after the photo already exists.
+    func withLightness(_ lightness: Double?) -> Artwork {
+        Artwork(
+            id: id,
+            provider: provider,
+            origin: origin,
+            title: title,
+            creator: creator,
+            creatorURL: creatorURL,
+            webURL: webURL,
+            downloadLocation: downloadLocation,
+            lightness: lightness ?? self.lightness
+        )
     }
 
     /// A URL for the actual bytes, or `nil` for a file already on disk.
@@ -180,6 +207,7 @@ struct Artwork: Codable, Hashable, Identifiable, Sendable {
         creatorURL = try container.decodeIfPresent(URL.self, forKey: .creatorURL)
         webURL = try container.decodeIfPresent(URL.self, forKey: .webURL)
         downloadLocation = try container.decodeIfPresent(String.self, forKey: .downloadLocation)
+        lightness = try container.decodeIfPresent(Double.self, forKey: .lightness)
     }
 }
 

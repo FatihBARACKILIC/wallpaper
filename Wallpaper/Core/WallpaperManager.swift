@@ -194,6 +194,26 @@ final class WallpaperManager {
         }
     }
 
+    /// Replaces a resolved location that has gone stale.
+    ///
+    /// Launch is the one moment this is worth spending: a Mac that has crossed
+    /// a continent since the coordinate was stored would compute the wrong
+    /// sunrise until somebody noticed. It costs a Wi-Fi lookup at most once a
+    /// month, asks for nothing the user has not already granted, and a failure
+    /// is silent — the stored coordinate is still a better answer than none.
+    func refreshLocationIfStale() async {
+        let setting = settings.settings.sunlight
+        guard setting.isEnabled, setting.isAutomatic, setting.coordinate != nil, setting.isStale
+        else { return }
+
+        guard let coordinate = try? await CurrentLocation.request() else { return }
+        settings.update {
+            $0.sunlight.coordinate = coordinate
+            $0.sunlight.updatedAt = Date()
+        }
+        Log.wallpaper.info("location refreshed")
+    }
+
     func intervalChanged() {
         scheduler.stop()
         start()
@@ -303,8 +323,105 @@ final class WallpaperManager {
         }
 
         prefetched.removeAll()
-        return try await fetchAndDownload(count: count)
+        return try await fetchAndDownload(count: count, sunlight: sunlight(at: Date()))
     }
+
+    // MARK: - Matching the sky
+
+    /// How bright a photo the desktop should be wearing at `date`, or `nil`
+    /// when the user has not asked for this or there is nowhere to compute from.
+    private func sunlight(at date: Date) -> Sunlight? {
+        let setting = settings.settings.sunlight
+        guard setting.isUsable, let coordinate = setting.coordinate else { return nil }
+        return SolarPosition.sunlight(at: coordinate, date: date)
+    }
+
+    /// What the menu says about the sky right now. `nil` when the feature is
+    /// off, so the menu shows nothing rather than an explanation of a setting
+    /// the user never turned on.
+    var currentSunlight: Sunlight? { sunlight(at: Date()) }
+
+    /// Sunrise and sunset for today, for the settings row that has to prove
+    /// the location is right.
+    var todaysSunriseAndSunset: (sunrise: Date, sunset: Date)? {
+        guard let coordinate = settings.settings.sunlight.coordinate, coordinate.isValid
+        else { return nil }
+        return SolarPosition.sunriseAndSunset(at: coordinate)
+    }
+
+    /// Orders a draw so the photos that suit the sky come first.
+    ///
+    /// A preference, never a filter. Nothing is dropped: a draw where every
+    /// photo is wrong for the hour still changes the wallpaper, because a
+    /// desktop that freezes at dusk is a worse outcome than one wearing a
+    /// bright photo at night. Photos whose brightness nobody knows sort last
+    /// but stay in the list for the same reason.
+    ///
+    /// Stable within equal fits, so the shuffle the draw already has is not
+    /// undone.
+    private func ranked(_ artworks: [Artwork], for sunlight: Sunlight?) async -> [Artwork] {
+        guard let sunlight, artworks.count > 1 else { return artworks }
+
+        let measured = await measuringLocalFiles(artworks)
+        let target = sunlight.targetBrightness
+
+        return measured
+            .enumerated()
+            .sorted { left, right in
+                let a = left.element.lightness.map { abs($0 - target) }
+                let b = right.element.lightness.map { abs($0 - target) }
+                switch (a, b) {
+                case let (a?, b?) where a != b: return a < b
+                case (nil, _?): return false
+                case (_?, nil): return true
+                default: return left.offset < right.offset
+                }
+            }
+            .map(\.element)
+    }
+
+    /// Measures the photos that are already files on this Mac.
+    ///
+    /// Only those: measuring a remote photo would mean downloading it first,
+    /// and downloading a batch to choose one from it is exactly the cost this
+    /// feature is built to avoid. Unsplash and Wallhaven send a dominant colour
+    /// with the search result instead, so theirs is already known; APOD sends
+    /// nothing and is measured after the download it was going to do anyway.
+    ///
+    /// Capped, and off the main thread: a folder draw is a shortlist, but the
+    /// shortlist grows with the screen count and every measurement decodes a
+    /// thumbnail.
+    private func measuringLocalFiles(_ artworks: [Artwork]) async -> [Artwork] {
+        // Worked out here and handed over as plain positions and URLs: the
+        // background task measures files and knows nothing about `Artwork`.
+        let pending: [(position: Int, url: URL)] = artworks.enumerated()
+            .prefix(Self.brightnessSampleLimit)
+            .compactMap { index, artwork in
+                guard artwork.lightness == nil, artwork.origin.isLocalFile else { return nil }
+                return (index, artwork.origin.url)
+            }
+        guard !pending.isEmpty else { return artworks }
+
+        let measured = await Task.detached(priority: .utility) {
+            pending.reduce(into: [Int: Double]()) { result, file in
+                result[file.position] = ImageBrightness.lightness(ofFile: file.url)
+            }
+        }.value
+
+        return artworks.enumerated().map { index, artwork in
+            measured[index].map { artwork.withLightness($0) } ?? artwork
+        }
+    }
+
+    /// How many files a folder draw is willing to measure before it stops
+    /// caring which is the best fit.
+    ///
+    /// Measuring costs about 60 ms for a full-size JPEG with no embedded
+    /// thumbnail — measured — so this is a second of background CPU once per
+    /// change, and it is sized to the draw rather than guessed: `askFor` adds
+    /// ten candidates when the sky is being matched, so twelve covers a
+    /// single-screen folder pick without ever leaving files unmeasured.
+    private static let brightnessSampleLimit = 12
 
     /// Picks a source and readies `count` photos from it.
     ///
@@ -313,7 +430,7 @@ final class WallpaperManager {
     /// nothing should not freeze the desktop of someone who also has three
     /// sources that work. A bad key or an exhausted quota is not source
     /// specific — that is the user's to fix, and it is reported at once.
-    private func fetchAndDownload(count: Int) async throws -> [Applied] {
+    private func fetchAndDownload(count: Int, sunlight: Sunlight?) async throws -> [Applied] {
         var sources = settings.usableSources.shuffled()
         guard !sources.isEmpty else {
             throw SetupError.noUsableSources(settings.settings.sources)
@@ -341,7 +458,7 @@ final class WallpaperManager {
         var lastError: (any Error)?
         for source in sources {
             do {
-                return try await fetch(count: count, from: source)
+                return try await fetch(count: count, from: source, sunlight: sunlight)
             } catch let error where Self.isSourceSpecific(error) {
                 Log.wallpaper.info(
                     "source \(source.shortLabel, privacy: .public) unusable, trying another: \(error.localizedDescription, privacy: .public)"
@@ -353,36 +470,45 @@ final class WallpaperManager {
         throw lastError ?? SetupError.noUsableSources(settings.settings.sources)
     }
 
-    private func fetch(count: Int, from source: Source) async throws -> [Applied] {
+    private func fetch(count: Int, from source: Source, sunlight: Sunlight?) async throws -> [Applied] {
         switch source.kind {
         case .folder:
             // Nothing to download: the files are already on this Mac, and they
             // are the user's, so they are used exactly where they lie.
             let inUse = Set(current.map(\.url.standardizedFileURL))
-            return try LocalFolder
-                .randomArtworks(
-                    count: count,
-                    from: source,
-                    avoiding: inUse,
-                    blocked: library.blockedKeys
-                )
+            let files = try LocalFolder.randomArtworks(
+                count: askFor(count, sunlight: sunlight),
+                from: source,
+                avoiding: inUse,
+                blocked: library.blockedKeys
+            )
+            return await ranked(files, for: sunlight)
+                .prefix(count)
                 .map { Applied(artwork: $0, url: $0.origin.url) }
 
         case .apod:
-            let entries = try await nasa.randomArtworks(count: askFor(count))
-            return try await downloadAll(allowed(entries, from: source), count: count)
+            let entries = try await nasa.randomArtworks(count: askFor(count, sunlight: sunlight))
+            return try await downloadAll(
+                await ranked(allowed(entries, from: source), for: sunlight), count: count
+            )
 
         case .wallhaven:
             let entries = try await wallhaven.randomArtworks(
-                count: askFor(count),
+                count: askFor(count, sunlight: sunlight),
                 from: source,
                 atLeast: wallhavenMinimumSize
             )
-            return try await downloadAll(allowed(entries, from: source), count: count)
+            return try await downloadAll(
+                await ranked(allowed(entries, from: source), for: sunlight), count: count
+            )
 
         case .topic, .collection, .search:
-            let photos = try await client.randomArtworks(count: askFor(count), from: source)
-            return try await downloadAll(allowed(photos, from: source), count: count)
+            let photos = try await client.randomArtworks(
+                count: askFor(count, sunlight: sunlight), from: source
+            )
+            return try await downloadAll(
+                await ranked(allowed(photos, from: source), for: sunlight), count: count
+            )
         }
     }
 
@@ -393,8 +519,15 @@ final class WallpaperManager {
     /// block list to filter against. This costs no extra request: both
     /// providers return the whole batch in one call, and only the photos
     /// actually used are downloaded and reported.
-    private func askFor(_ needed: Int) -> Int {
-        library.blockedKeys.isEmpty ? needed : needed + 5
+    ///
+    /// Matching the sky over-asks for the same reason and at the same price:
+    /// there has to be a spread of brightnesses to choose the closest from, and
+    /// a batch of one is not a choice.
+    private func askFor(_ needed: Int, sunlight: Sunlight? = nil) -> Int {
+        var count = needed
+        if !library.blockedKeys.isEmpty { count += 5 }
+        if sunlight != nil { count += 10 }
+        return count
     }
 
     /// Drops the photos the user asked never to see again.
@@ -414,9 +547,26 @@ final class WallpaperManager {
         var results: [Applied] = []
         for (index, artwork) in artworks.prefix(count).enumerated() {
             let size = downloadSize(forScreenAt: index)
-            results.append(Applied(artwork: artwork, url: try await cache.download(artwork, pixelSize: size)))
+            let url = try await cache.download(artwork, pixelSize: size)
+
+            // The file is the truth about how light a photo is; a dominant
+            // colour is only a good enough guess to have ranked the batch by.
+            // Writing it back is what lets the cache fallback rank too.
+            let measured = await measured(artwork, at: url)
+            cache.record(measured, at: url)
+
+            results.append(Applied(artwork: measured, url: url))
         }
         return results
+    }
+
+    /// Fills in a downloaded photo's brightness from the file itself.
+    private func measured(_ artwork: Artwork, at url: URL) async -> Artwork {
+        guard settings.settings.sunlight.isEnabled else { return artwork }
+        let measured = await Task.detached(priority: .utility) {
+            ImageBrightness.lightness(ofFile: url)
+        }.value
+        return artwork.withLightness(measured)
     }
 
     /// Whether the failure says "this source won't do" rather than "the app is
@@ -761,7 +911,11 @@ final class WallpaperManager {
             return false
         }
 
-        var chosen = Array(candidates.shuffled().prefix(neededPhotoCount))
+        // The index remembers how light each cached photo is, so an outage is
+        // no reason to stop matching the sky.
+        let ordered = await ranked(candidates.shuffled().map(\.artwork), for: currentSunlight)
+        let byKey = Dictionary(candidates.map { ($0.artwork.key, $0) }, uniquingKeysWith: { first, _ in first })
+        var chosen = ordered.compactMap { byKey[$0.key] }.prefix(neededPhotoCount).map { $0 }
         // Fewer cached photos than screens: repeat rather than give up.
         while chosen.count < neededPhotoCount, let first = chosen.first {
             chosen.append(first)
@@ -1070,9 +1224,15 @@ final class WallpaperManager {
             let needed = neededPhotoCount
             guard prefetched.count < needed else { return }
 
+            // Matched against the sky at the moment this photo will go up, not
+            // the moment it is fetched. On a twelve-hour interval those are
+            // opposite ends of the day, and picking for now would put a noon
+            // photo on a midnight desktop.
+            let due = scheduler.nextChangeDate ?? Date()
+
             // A failed prefetch is not worth surfacing — the next change will
             // fetch fresh photos and report the error then.
-            if let batch = try? await fetchAndDownload(count: needed) {
+            if let batch = try? await fetchAndDownload(count: needed, sunlight: sunlight(at: due)) {
                 prefetched = batch
                 housekeep()
             }

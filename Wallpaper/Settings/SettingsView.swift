@@ -46,6 +46,8 @@ private struct GeneralSettings: View {
                 ))
             }
 
+            SunlightSection(manager: manager)
+
             Section {
                 Toggle("Pause downloads on cellular and hotspots", isOn: Binding(
                     get: { manager.settings.settings.pauseOnExpensiveNetwork },

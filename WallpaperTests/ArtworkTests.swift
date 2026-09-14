@@ -86,6 +86,30 @@ struct ArtworkTests {
         )).fileExtension == "png")
     }
 
+    @Test("A photo stored before brightness existed still reads, and says it does not know")
+    func lightnessIsOptional() throws {
+        // Every entry in `photo-index.json` predates this field. One that
+        // failed to decode would be treated as un-creditable and evicted
+        // first — the same trap the provider migration guards.
+        let stored = try JSONEncoder().encode(makeArtwork())
+        let decoded = try JSONDecoder().decode(Artwork.self, from: stored)
+        #expect(decoded.lightness == nil)
+
+        // Unknown is not the same as dark: the ranking has to be able to tell
+        // "nobody measured this" from "this is a night photo".
+        #expect(makeArtwork(color: "#000000").lightness == 0)
+
+        let measured = decoded.withLightness(0.42)
+        #expect(measured.lightness == 0.42)
+        #expect(try JSONDecoder().decode(
+            Artwork.self, from: JSONEncoder().encode(measured)
+        ).lightness == 0.42)
+
+        // Filling it in a second time keeps the first answer: a measured file
+        // beats a dominant colour, and it is measured first.
+        #expect(measured.withLightness(nil).lightness == 0.42)
+    }
+
     @Test("The same short ID under two providers is two different photos")
     func keyIsProviderQualified() throws {
         // Unsplash and Wallhaven IDs are both short strings of letters and

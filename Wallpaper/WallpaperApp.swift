@@ -41,6 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // would fetch photos before there is a key to fetch them with.
         guard manager.settings.settings.hasCompletedOnboarding else { return }
         manager.start()
+        Task { await manager.refreshLocationIfStale() }
     }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
