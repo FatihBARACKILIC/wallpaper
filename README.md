@@ -12,7 +12,7 @@ There is no Dock icon and no window to leave open. It sits quietly until it is t
 2. Open it and drag **Wallpaper** into your **Applications** folder
 3. In Applications, **right-click Wallpaper and choose Open**, then confirm
 
-You need macOS 26 or later.
+You need macOS 15 Sequoia or later.
 
 **Why the right-click?** Apple charges developers a yearly fee to have their apps checked and approved. This one has not been through that process, so if you just double-click it, macOS says it "cannot check it for malicious software" and refuses. Opening it from the right-click menu once tells your Mac you trust it, and you will not be asked again. Nothing is wrong with the download.
 

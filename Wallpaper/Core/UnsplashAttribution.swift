@@ -1,5 +1,5 @@
 import Foundation
-import Synchronization
+import os
 
 /// Builds the links used for attribution.
 ///
@@ -13,10 +13,14 @@ import Synchronization
 /// wherever they are found — including the background executor a folder scan or
 /// a download runs on. This is the app's one piece of global mutable state, so
 /// it says out loud how it is protected.
+///
+/// `OSAllocatedUnfairLock` rather than `Mutex`: the two are equivalent for one
+/// string, and this one has been there since macOS 13. Nothing about guarding
+/// a name should be what decides how old a Mac the app will run on.
 nonisolated enum UnsplashAttribution {
     static let defaultApplicationName = "Wallpaper"
 
-    private static let name = Mutex<String>(defaultApplicationName)
+    private static let name = OSAllocatedUnfairLock(initialState: defaultApplicationName)
 
     /// Kept in sync by `SettingsStore` so views can build links without
     /// threading the name through every layer.
