@@ -4,6 +4,26 @@ A lightweight macOS menu bar app that rotates your desktop wallpaper on your own
 
 Built to stay out of the way: no Dock icon, no windows unless you open them, and near-zero idle resource usage.
 
+## Install
+
+1. Download `Wallpaper.dmg` from the [latest release](https://github.com/FatihBARACKILIC/wallpaper/releases/latest)
+2. Open it and drag **Wallpaper** into **Applications**
+3. The first launch needs one extra step, explained below
+
+macOS 26.0 or later. Apple Silicon and Intel.
+
+### The first launch
+
+This build is signed ad-hoc rather than with a Developer ID, so it is not notarized and macOS will refuse to open it by double-click — it will say the app "cannot be opened because Apple cannot check it for malicious software". Nothing is wrong with the download; the app simply has not been through Apple's notary service.
+
+To open it anyway, **right-click the app in Applications and choose Open**, then confirm. macOS remembers the decision, so this is a one-time step. If you prefer the terminal:
+
+```
+xattr -dr com.apple.quarantine /Applications/Wallpaper.app
+```
+
+If you would rather not run unnotarized software — a perfectly reasonable position — [build it from source](#building-from-source) instead. It takes one command and needs nothing but Xcode.
+
 ## Features
 
 - **Menu bar only** — runs in the background, no Dock icon
