@@ -1,123 +1,117 @@
 # Wallpaper
 
-Your desktop, with a new photo on it whenever you like.
+A new photo on your desktop, as often as you like.
 
-Wallpaper is a small macOS menu bar app that changes your wallpaper on a schedule you set, using photos from wherever you want them: [Unsplash](https://unsplash.com), [Wallhaven](https://wallhaven.cc), NASA's [picture of the day](https://apod.nasa.gov/apod/astropix.html), or your own folders.
+Wallpaper sits in your menu bar and changes your desktop picture on whatever schedule suits you — every few minutes, once a day, once a week, or only when you press the button. The photos come from wherever you want them: [Unsplash](https://unsplash.com), [Wallhaven](https://wallhaven.cc), NASA's [picture of the day](https://apod.nasa.gov/apod/astropix.html), or your own folders.
 
-It has no Dock icon and no windows unless you open one. While it waits for the next change it costs 0.004% of a CPU core and a couple of dozen megabytes — which is another way of saying you will forget it is running.
+There is no Dock icon and no window to leave open. It sits quietly until it is time for the next photo, and it is light enough that you will forget it is there.
 
 ## Install
 
 1. Download `Wallpaper.dmg` from the [latest release](https://github.com/FatihBARACKILIC/wallpaper/releases/latest)
-2. Drag **Wallpaper** into **Applications**
-3. Right-click it and choose **Open**, then confirm
+2. Open it and drag **Wallpaper** into your **Applications** folder
+3. In Applications, **right-click Wallpaper and choose Open**, then confirm
 
-You need macOS 26 or later. The app runs natively on both Apple Silicon and Intel.
+You need macOS 26 or later.
 
-That third step is only needed the first time. This build is signed ad-hoc rather than with a paid Developer ID, so it has not been through Apple's notary service, and macOS greets anything unnotarized with "Apple cannot check it for malicious software." Opening it from the right-click menu tells macOS you meant it. Nothing is wrong with the download.
+**Why the right-click?** Apple charges developers a yearly fee to have their apps checked and approved. This one has not been through that process, so if you just double-click it, macOS says it "cannot check it for malicious software" and refuses. Opening it from the right-click menu once tells your Mac you trust it, and you will not be asked again. Nothing is wrong with the download.
 
-If you would rather not run unnotarized software — a fair position — [build it yourself](#building-it-yourself) instead. It takes one command.
+## Choosing where your photos come from
 
-## Where the photos come from
+Add as many sources as you like. Each time the wallpaper changes, one of them is picked at random.
 
-Add as many sources as you like. Each change picks one of them at random.
-
-| Source | What it gives you | Needs a key? |
+| | What you get | Sign-up needed? |
 | --- | --- | --- |
-| **Wallhaven** | The whole site, a search, or a tag | No |
-| **Your folders** | Any folders of your own photos, subfolders included | No |
-| **Unsplash** | Topics, collections, or a search | A free one |
-| **NASA** | The Astronomy Picture of the Day | A free one |
+| **Wallhaven** | Wallpapers from the whole site, a search, or a tag | None |
+| **Your own folders** | Any folders of photos on your Mac, subfolders included | None |
+| **Unsplash** | Photography by topic, collection, or search | A free key |
+| **NASA** | The Astronomy Picture of the Day | A free key |
 
-Wallhaven and your own folders work straight out of the box — no account, and folders need no connection at all. The app walks you through getting the other two keys, and keeps them in the macOS Keychain.
+To add one, just type what you want: `wallhaven` for the whole site, `wallhaven mountains at dusk` for a search, `nasa` for the picture of the day, or a few words for an Unsplash search. Pasting a link from Unsplash or Wallhaven works too.
 
-To add one, type what you want: `wallhaven` on its own for the whole site, `wallhaven mountains at dusk` for a search, `nasa` for the picture of the day, a paste of a Wallhaven or Unsplash link, or just some words for an Unsplash search.
+Wallhaven and your own folders need no account, no key and no sign-up. If you never want to create an account anywhere, you can use the app happily with just those two.
 
-## What it does while you are not looking
+## What it does
 
-**Changes on your schedule.** Anything from every five minutes to once a week, or only when you ask. A change missed while the Mac was asleep, offline or shut down happens as soon as it can.
+**Changes on your schedule.** Anything from every five minutes to once a week, or never unless you ask. If your Mac was asleep or switched off when a change was due, it happens as soon as you are back.
 
-**Matches the sky, if you want.** Bright photos while the sun is up, darker ones after it sets, easing through the middle at dawn and dusk. It works out sunrise and sunset from your coordinates on this Mac — no service is called, and the coordinate never leaves the machine. You can type one in by hand instead of granting location access, and if macOS never gets round to showing the permission prompt, typing one works just as well.
+**Follows the sun, if you want it to.** Bright photos during the day, darker ones at night, easing between the two at dawn and dusk. Your Mac works this out from your location by itself — nothing is sent anywhere, and you can simply type in a latitude and longitude if you would rather not share your location at all.
 
-**Fits your screen.** Photos shaped like your display are picked first, so a folder full of phone photos doesn't leave you with a heavily cropped portrait across a widescreen monitor. Downloads are sized to your display rather than fetched at full resolution.
+**Picks photos that suit your screen.** Ones shaped like your display come first, so a folder of phone photos doesn't leave you with a badly cropped portrait stretched across a wide monitor.
 
-**Handles more than one display.** The same photo everywhere, or a different one on each. Spaces you aren't looking at get dressed the moment you switch to them.
+**Handles several displays.** The same photo on each, or a different one everywhere. Desktops you aren't looking at are updated the moment you switch to them.
 
-**Watches your data.** On a hotspot or cellular connection it stops downloading, keeps rotating your own folders and the photos it already has, and waits for Wi-Fi.
+**Watches your data.** On a phone hotspot it stops downloading, carries on with your own photos and the ones it already has, and waits for Wi-Fi.
 
-**Keeps going when something breaks.** A source that is out of quota, offline, or on a drive you unplugged is skipped in favour of one that works. If none of them work, it rotates through photos you already have rather than freezing your desktop.
+**Doesn't give up.** If one source is down, out of quota, or on a drive you unplugged, it quietly uses another. If none of them work, it reuses photos you already have rather than leaving your desktop stuck.
 
-**Fades.** Wallpapers dissolve into each other instead of snapping. You can turn that off.
+**Fades between photos** instead of snapping, which you can turn off.
 
-**Starts with your Mac**, if you switch that on. It is off by default.
+**Can start when your Mac does.** Off unless you switch it on.
 
-## Photos you like, and photos you don't
+## Photos you love, and photos you don't
 
-The menu bar shows who took the photo currently on your desktop, and offers two opinions about it.
+The menu bar shows who took the photo you are looking at, and lets you say what you think of it.
 
-**Pin this** keeps it. Pinned photos are never deleted to make room, and you can put one back on the desktop whenever you want.
+**Pin this** keeps it. Pinned photos are never deleted to make space, and you can put one back on your desktop whenever you want.
 
-**Never show again** is final. That photo is never picked again from any source, its downloaded copy is deleted, and if it happened to be on screen the wallpaper changes immediately.
+**Never show again** gets rid of it for good. It won't be picked again from any source, its copy is deleted, and if it was on your desktop at the time, it changes straight away.
 
-**Previous wallpaper** (⌘[) walks back through the last fifty, one press at a time. Settings › History has all three lists in full, and every row links to where its photo came from — its page on Unsplash or Wallhaven, its day in the NASA archive, or the file itself in Finder.
+**Previous wallpaper** (⌘[) steps back through the last fifty photos, one press at a time. Settings › History has the full lists, and every row takes you to where the photo came from.
 
-A wallpaper you choose by hand stays for a full interval. Rotation won't wipe your choice off the screen a minute later.
+Pick a photo yourself and it stays for a full turn — the schedule won't wipe your choice away a minute later.
 
-## Your own photos
+## Using your own photos
 
-**Settings › Sources › Add folders…** takes any number of folders at once. Subfolders count; hidden files and package contents like a Photos library don't.
+**Settings › Sources › Add folders…** takes as many folders as you like, all at once. Subfolders are included. Hidden files and things like your Photos library are left out.
 
-Your files are read and nothing else. They are never copied into the app's cache, never renamed, never moved, never deleted — the wallpaper is set straight from where the file already sits. That is also why a folder on an external drive is simply skipped while the drive is unplugged, and why blocking one of your own photos only stops the app picking it.
+Your photos are only ever read. They are never copied, renamed, moved or deleted — the app sets your wallpaper straight from where the file already sits. A folder on an external drive is simply skipped while the drive is unplugged.
 
-The first time you choose a folder inside Desktop, Documents or Downloads, macOS will ask you to allow it. That is the system's own prompt.
+The first time you pick a folder inside Desktop, Documents or Downloads, macOS will ask if you want to allow it. That prompt is from macOS, not from this app.
 
-## Getting the two API keys
+## The two free keys
 
-Both are free and take a couple of minutes. The same instructions are inside the app, during setup and in Settings.
+Unsplash and NASA ask you to register before their photos can be used. Both are free, take about two minutes, and the app shows you these same steps while you set it up.
 
-**Unsplash.** Sign in at [unsplash.com](https://unsplash.com), open [your applications](https://unsplash.com/oauth/applications), click **New Application**, accept the terms and name it. Copy the **Access Key** — the Secret Key isn't needed. Enter the name you gave the application too: Unsplash expects attribution links to say which application sent the visitor.
+**For Unsplash:** sign in at [unsplash.com](https://unsplash.com), go to [your applications](https://unsplash.com/oauth/applications), click **New Application**, accept the terms and give it a name. Copy the **Access Key** and paste it into the app, along with the name you chose. The free allowance is far more than changing your wallpaper will ever use.
 
-A new application gets 50 requests an hour, which is plenty. One change costs two requests: one to pick the photo, one to report that you used it, as the guidelines require. The image itself costs nothing.
+**For NASA:** fill in the short form at [api.nasa.gov](https://api.nasa.gov) and the key arrives by email within seconds. There is no account to create.
 
-**NASA.** Fill in the short form at [api.nasa.gov](https://api.nasa.gov) and the key arrives by email. There is no account to create. A personal key allows 1000 requests an hour; one change costs one.
+Your keys are kept in your Mac's Keychain, the same place Safari keeps your passwords.
 
-Wallhaven needs neither a key nor an account, and its limit — 45 requests a minute — is not something one change at a time can reach.
+## Where your photos are kept
 
-## Where things are kept
-
-Downloaded photos live in `~/Library/Application Support/Wallpaper/Photos`, named so you can tell what they are:
+Downloaded photos are saved in your Library folder, with names that tell you what they are:
 
 ```
 2026-09-10 — Ales Krivec — misty-mountain-lake — Ry9WBo3qmoc.jpg
 ```
 
-That trailing ID takes you back to the original: `unsplash.com/photos/<id>`, or `wallhaven.cc/w/<id>`. The source link is also written into the file's "Where from" metadata, which Finder shows in Get Info.
+You can open the folder any time from **Settings › Storage › Show in Finder**, and every photo remembers where it came from — Finder's Get Info will show you the page it was downloaded from.
 
-By default the folder is capped at 100 photos or 1 GB, whichever fills first, and the oldest go first. You can change or remove the cap, and empty the folder, in Settings. What is on screen and what you pinned is never deleted — so a long list of pins can hold the folder above the cap, which is rather the point of pinning.
+The app keeps up to 100 photos or 1 GB, whichever comes first, and deletes the oldest to make room. You can change that, or empty the folder entirely, in Settings. Anything you pinned, and whatever is currently on your desktop, is never deleted.
 
-## Uninstalling
+## Removing it
 
-**Settings › General › Uninstall Wallpaper…** removes the lot: the cached photos and your history, the settings and schedule, the network caches, your two keys in the login keychain, and the open-at-login registration. It puts your desktop back to the macOS default first, and offers to move the app to the Trash. Anything it cannot remove is listed with its path.
+**Settings › General › Uninstall Wallpaper…** takes everything back out: the saved photos, your settings and history, your keys, and the start-up entry. Your desktop is set back to the macOS default, and you are offered the chance to move the app itself to the Trash.
 
-Two things it leaves alone on purpose. macOS keeps a metadata stub at `~/Library/Containers/com.barackilic.Wallpaper`; removing it would need Full Disk Access, which this app has no business asking for — drag it to the Trash yourself if it bothers you. And your Unsplash application belongs to you, so delete it on unsplash.com if you want it gone.
+Your own photo folders are untouched. The app only ever read them.
 
-Your own photo folders are never touched. The app only ever read them.
+## About the photographs
 
-## Credit where it is due
+The photos belong to the people who took them, not to this app. Unsplash photography credits the photographer in the menu bar and links to their profile. NASA pictures name their copyright holder when there is one, though most are public domain. Wallhaven wallpapers are uploaded by its users, so the menu links to the wallpaper's page and, where the uploader gave one, to the original.
 
-Unsplash photos credit the photographer in the menu bar and link to both their profile and Unsplash, with the parameters the [API guidelines](https://help.unsplash.com/en/articles/2511245-unsplash-api-guidelines) ask for, and every photo used is reported to Unsplash's download endpoint.
+If you want to use one of these photos for something else — a blog post, a print, anything beyond your own desktop — follow the link and check what its licence actually allows first.
 
-Most NASA pictures are public domain, but some belong to the astrophotographer who made them. Where the API names a copyright holder, the app shows it.
+## For developers
 
-Wallhaven wallpapers are uploaded by its users and the API names no author, so the menu links to the wallpaper's page and, where the uploader credited one, to the original. Neither is a licence — check the page before you reuse an image somewhere else.
-
-## Building it yourself
+The app is written in Swift and SwiftUI, and builds with no dependencies:
 
 ```
 xcodebuild -project Wallpaper.xcodeproj -scheme Wallpaper -configuration Release build
 xcodebuild test -project Wallpaper.xcodeproj -scheme Wallpaper -destination 'platform=macOS'
 ```
 
-## License
+Building it yourself also sidesteps the right-click step in the install instructions. `CLAUDE.md` documents the decisions behind the design.
 
-MIT — see [LICENSE](LICENSE).
+Released under the MIT licence — see [LICENSE](LICENSE).
