@@ -10,11 +10,12 @@ There is no Dock icon and no window to leave open. It sits quietly until it is t
 
 1. Download `Wallpaper.dmg` from the [latest release](https://github.com/FatihBARACKILIC/wallpaper/releases/latest)
 2. Open it and drag **Wallpaper** into your **Applications** folder
-3. In Applications, **right-click Wallpaper and choose Open**, then confirm
+3. Double-click it. macOS will say it cannot verify the app — click **Done**
+4. Open **System Settings → Privacy & Security**, scroll to the bottom, and click **Open Anyway**
 
 You need macOS 15 Sequoia or later.
 
-**Why the right-click?** Apple charges developers a yearly fee to have their apps checked and approved. This one has not been through that process, so if you just double-click it, macOS says it "cannot check it for malicious software" and refuses. Opening it from the right-click menu once tells your Mac you trust it, and you will not be asked again. Nothing is wrong with the download.
+**Why the extra step?** Apple charges developers a yearly fee to have their apps checked and approved. This one has not been through that process, so macOS stops it the first time and asks you to say, once, that you meant it. You will not be asked again. Nothing is wrong with the download.
 
 ## Choosing where your photos come from
 
